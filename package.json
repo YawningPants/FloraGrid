@@ -1,0 +1,20 @@
+{
+  "name": "desktop-calendar-tauri",
+  "version": "1.0.0",
+  "description": "A lightweight desktop calendar migrated from Electron to Tauri.",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "check": "node --check src/calendar-shell.mjs && node --check src/renderer.mjs && node --check src/views/day-view.mjs && node --check src/views/tag-manager-page.mjs && node --check src/views/registry.mjs && node --check src/data/sample-calendar.mjs && node --check src/domain/date.mjs && node --check src/domain/tags.mjs && node --check src/domain/tasks.mjs && node --check src/domain/theme.mjs && node --check src/storage/day-storage.mjs && node --check src/storage/storage-location.mjs && node --check src/storage/tag-template-storage.mjs && node --check src/ui/dom.mjs && node --check src/ui/icons.mjs && node --check src/ui/task-tree-layout.mjs && node --check src/ui/window-titlebar.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  }
+}

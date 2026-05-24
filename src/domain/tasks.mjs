@@ -1,0 +1,193 @@
+export const taskStatusMeta = {
+  active: { label: '进行中', symbol: '', order: 0 },
+  completed: { label: '已完成', symbol: '✓', order: 1 },
+  failed: { label: '已失败', symbol: '!', order: 2 },
+  deleted: { label: '已删除', symbol: '×', order: 3 },
+};
+
+export function createBlankTask() {
+  return {
+    id: `task-${crypto.randomUUID()}`,
+    title: '',
+    status: 'active',
+    tags: [],
+    collapsed: false,
+    children: [],
+  };
+}
+
+export function findTask(items, taskId) {
+  for (const task of items) {
+    if (task.id === taskId) {
+      return task;
+    }
+    const child = findTask(task.children || [], taskId);
+    if (child) {
+      return child;
+    }
+  }
+  return null;
+}
+
+export function removeTask(items, taskId) {
+  const index = items.findIndex((task) => task.id === taskId);
+  if (index !== -1) {
+    items.splice(index, 1);
+    return true;
+  }
+
+  return items.some((task) => removeTask(task.children || [], taskId));
+}
+
+export function detachTask(items, taskId) {
+  const index = items.findIndex((task) => task.id === taskId);
+  if (index !== -1) {
+    return items.splice(index, 1)[0];
+  }
+
+  for (const task of items) {
+    const removed = detachTask(task.children || [], taskId);
+    if (removed) {
+      return removed;
+    }
+  }
+  return null;
+}
+
+export function getTaskLocation(items, taskId, parentId = null) {
+  for (let index = 0; index < items.length; index += 1) {
+    const task = items[index];
+    if (task.id === taskId) {
+      return { task, parentId, index };
+    }
+    const child = getTaskLocation(task.children || [], taskId, task.id);
+    if (child) {
+      return child;
+    }
+  }
+  return null;
+}
+
+export function flattenTasks(items) {
+  return items.flatMap((task) => [task, ...flattenTasks(task.children || [])]);
+}
+
+export function normalizeTaskTree(items) {
+  return items.map((task) => ({
+    ...task,
+    collapsed: Boolean(task.collapsed),
+    children: normalizeTaskTree(task.children || []),
+  }));
+}
+
+export function sortByStatus(items) {
+  return [...items].sort((a, b) => taskStatusMeta[a.status].order - taskStatusMeta[b.status].order);
+}
+
+export function getRenderableTasks(items, showDeletedTasks) {
+  return sortByStatus(items).filter((task) => showDeletedTasks || task.status !== 'deleted');
+}
+
+export function getChildrenByParentId(items, parentId) {
+  if (parentId === null) {
+    return items;
+  }
+
+  const parent = findTask(items, parentId);
+  if (!parent) {
+    return null;
+  }
+  parent.children ||= [];
+  return parent.children;
+}
+
+export function getVisibleSiblings(items, parentId, showDeletedTasks) {
+  return getRenderableTasks(getChildrenByParentId(items, parentId) || [], showDeletedTasks);
+}
+
+export function getDropIndexAroundTask(items, parentId, taskId, edge, { draggedTaskId = null, showDeletedTasks = false } = {}) {
+  const withoutDragged = getVisibleSiblings(items, parentId, showDeletedTasks)
+    .filter((task) => task.id !== draggedTaskId);
+  const targetIndex = withoutDragged.findIndex((task) => task.id === taskId);
+  if (targetIndex === -1) {
+    return withoutDragged.length;
+  }
+  return targetIndex + (edge === 'after' ? 1 : 0);
+}
+
+export function moveTaskWithinTree(items, taskId, nextParentId, nextIndex, { showDeletedTasks = false } = {}) {
+  const removed = detachTask(items, taskId);
+  if (!removed) {
+    return null;
+  }
+
+  const nextParent = nextParentId ? findTask(items, nextParentId) : null;
+  if (nextParent) {
+    nextParent.collapsed = false;
+  }
+  const siblings = getChildrenByParentId(items, nextParentId);
+  const visibleSiblings = getVisibleSiblings(items, nextParentId, showDeletedTasks);
+  const beforeTask = visibleSiblings.filter((task) => task.id !== taskId)[nextIndex] || null;
+  const index = beforeTask ? siblings.findIndex((task) => task.id === beforeTask.id) : siblings.length;
+  siblings.splice(Math.max(0, index), 0, removed);
+  return removed;
+}
+
+export function getVisibleTaskTree(items, { showDeletedTasks, searchQuery }) {
+  const query = normalizeSearchQuery(searchQuery);
+  const visibleItems = getRenderableTasks(items, showDeletedTasks);
+
+  if (!query) {
+    return visibleItems;
+  }
+
+  return visibleItems
+    .map((task) => {
+      const matchedChildren = getVisibleTaskTree(task.children || [], { showDeletedTasks, searchQuery });
+      const matchesSelf = task.title.toLowerCase().includes(query);
+      if (!matchesSelf && matchedChildren.length === 0) {
+        return null;
+      }
+      return {
+        ...task,
+        children: matchedChildren,
+      };
+    })
+    .filter(Boolean);
+}
+
+export function normalizeSearchQuery(searchQuery) {
+  return searchQuery.trim().toLowerCase();
+}
+
+export function hasDescendant(task, descendantId) {
+  if (!task?.children?.length) {
+    return false;
+  }
+  return task.children.some((child) => child.id === descendantId || hasDescendant(child, descendantId));
+}
+
+export function hasActiveDescendant(task) {
+  return (task.children || []).some((child) => child.status === 'active' || hasActiveDescendant(child));
+}
+
+export function failActiveDescendants(task) {
+  (task.children || []).forEach((child) => {
+    if (child.status === 'active') {
+      child.status = 'failed';
+    }
+    failActiveDescendants(child);
+  });
+}
+
+export function canAcceptChildTask(task) {
+  return task.status === 'active';
+}
+
+export function canEditTask(task) {
+  return task.status === 'active';
+}
+
+export function canMoveTask(task, searchQuery) {
+  return !normalizeSearchQuery(searchQuery) && task.status !== 'failed' && task.status !== 'deleted';
+}
