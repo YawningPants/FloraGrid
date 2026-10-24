@@ -1,5 +1,6 @@
 import { createCalendarShell } from './calendar-shell.mjs';
 import { createRequestedView } from './views/registry.mjs';
+import { startReminderClock } from './storage/reminder-service.mjs';
 
 if (window.__TAURI__?.window?.getCurrentWindow) {
   const currentWindow = window.__TAURI__.window.getCurrentWindow();
@@ -17,3 +18,4 @@ window.addEventListener('DOMContentLoaded', () => {
 
 const app = document.querySelector('#app');
 app.replaceChildren(createRequestedView());
+startReminderClock();

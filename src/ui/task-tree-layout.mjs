@@ -37,17 +37,20 @@ export function applyTagLineReserve(root) {
 }
 
 export function applyTreeBranchLayout(root) {
-  root?.querySelectorAll('.children').forEach((children) => {
+  const layouts = [...(root?.querySelectorAll('.children') || [])].map((children) => {
     const lastNode = children.querySelector(':scope > .task-node:last-child');
     const lastBranch = lastNode?.querySelector(':scope > .tree-branch');
     if (!lastBranch) {
-      children.style.removeProperty('--last-branch-y');
-      return;
+      return { children, offset: null };
     }
     const childrenRect = children.getBoundingClientRect();
     const branchRect = lastBranch.getBoundingClientRect();
     const offset = Math.max(0, Math.round(branchRect.top - childrenRect.top + 20));
-    children.style.setProperty('--last-branch-y', `${offset}px`);
+    return { children, offset };
+  });
+  layouts.forEach(({ children, offset }) => {
+    if (offset === null) children.style.removeProperty('--last-branch-y');
+    else if (children.style.getPropertyValue('--last-branch-y') !== `${offset}px`) children.style.setProperty('--last-branch-y', `${offset}px`);
   });
 }
 

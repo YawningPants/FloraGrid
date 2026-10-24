@@ -12,9 +12,10 @@ import {
 } from '../domain/tags.mjs';
 import {
   applyThemeSettings,
+  defaultTheme,
   loadThemeSettings,
   saveThemeSettings,
-  themePresets,
+  getThemePresets,
 } from '../domain/theme.mjs';
 import {
   canAcceptChildTask,
@@ -24,20 +25,20 @@ import {
   failActiveDescendants,
   findTask,
   flattenTasks,
-  getChildrenByParentId as getTreeChildrenByParentId,
-  getDropIndexAroundTask as getTreeDropIndexAroundTask,
   getTaskLocation,
-  getVisibleSiblings as getTreeVisibleSiblings,
   getVisibleTaskTree as getVisibleTaskTreeByState,
   hasActiveDescendant,
-  hasDescendant,
-  moveTaskWithinTree,
   normalizeSearchQuery,
   normalizeTaskTree,
   removeTask,
   taskStatusMeta,
 } from '../domain/tasks.mjs';
-import { flushDaySave, loadDay, scheduleSaveDay } from '../storage/day-storage.mjs';
+import {
+  canPasteToDate,
+  copyTask,
+  createPastedTaskFromClipboard,
+} from '../domain/task-clipboard.mjs';
+import { flushDaySave, getDayStorageOriginId, loadDay, scheduleSaveDay } from '../storage/day-storage.mjs';
 import {
   loadStorageLocation,
   pickDataDirectory,
@@ -47,14 +48,21 @@ import {
 import { loadTagTemplates } from '../storage/tag-template-storage.mjs';
 import { appendHighlightedText, el, escapeHtml, truncateText } from '../ui/dom.mjs';
 import { icon } from '../ui/icons.mjs';
-import { applyTreeBranchLayout, queueTaskTreeLayout } from '../ui/task-tree-layout.mjs';
+import { botanicalMotionEnabled, completionMarkup, createBotanicalEmpty, markNewShoot, sproutMarkup } from '../ui/botanical.mjs';
+import { createScrollRegion, disposeScrollRegion } from '../ui/scroll-region.mjs';
+import { applyTagLineReserve, applyTreeBranchLayout, queueTaskTreeLayout } from '../ui/task-tree-layout.mjs';
+import { createTaskDragController } from '../ui/task-drag-controller.mjs';
 import { createWindowTitleBar } from '../ui/window-titlebar.mjs';
+import { ensureReminders } from '../storage/reminder-service.mjs';
+import { markMovedReminders } from '../domain/reminders.mjs';
+import { openDay, openMonth, bindCalendarNavigation } from '../ui/calendar-navigation.mjs';
+import { openSettingsWindow as openSharedSettingsWindow } from '../ui/settings-window.mjs';
 
 let currentDay = createEmptyDay(getTodayDateKey());
 let taskState = currentDay.tasks;
 let editingTaskId = null;
-let dragState = null;
-let dropPreview = null;
+let draftTaskId = null;
+let taskDragController = null;
 let showDeletedTasks = false;
 let isSearchOpen = false;
 let searchQuery = '';
@@ -64,6 +72,9 @@ let isGlobalEscapeShortcutBound = false;
 let isBeforeUnloadFlushBound = false;
 let isExitRequestHandlerBound = false;
 let isTagTemplateUpdateHandlerBound = false;
+let isThemeUpdateHandlerBound = false;
+let isStorageUpdateHandlerBound = false;
+let isDayUpdateHandlerBound = false;
 let isDayLoading = true;
 let loadErrorMessage = '';
 let tagTemplates = normalizeTagTemplates(null);
@@ -78,6 +89,18 @@ let isAlwaysOnTop = false;
 let isTagPopoverViewportHandlerBound = false;
 let isTagPopoverOutsideHandlerBound = false;
 let storageLocation = null;
+let taskContextMenu = null;
+let taskColorPalette = null;
+let isTaskColorPaletteHandlerBound = false;
+let initialDayClaim = Promise.resolve();
+let daySwitchInFlight = false;
+let dayWindowRetired = false;
+let dayHandoffId = null;
+let pendingReveal = null;
+let dayRefreshPending = false;
+const pendingCompletions = new Map();
+const completionMoves = new Set();
+let completionSettleTimer = 0;
 const TAG_GROUP_VISIBLE_CHARS = 5;
 const TAG_GROUP_MIN_WIDTH = 34;
 const TAG_GROUP_MAX_WIDTH = 90;
@@ -85,21 +108,59 @@ const TAG_GROUP_PAGER_FALLBACK_WIDTH = 286;
 const TAG_POPOVER_WIDTH = 320;
 const TAG_POPOVER_MARGIN = 12;
 const TAG_POPOVER_GAP = 8;
+const taskColors = tagColors;
+const taskColorNames = ['浅蓝', '淡紫', '柔粉', '暖橙', '沙黄', '草绿', '青绿', '蓝灰'];
 
-export function createDayView() {
+export function createDayView(options = {}) {
   applyThemeSettings(themeSettings);
+  resetDayViewState(options.date);
+  daySwitchInFlight = false; dayWindowRetired = false; dayHandoffId = null;
   const root = el('section', 'day-window');
-  root.append(createTitleBar(), createHeader(root), createToolbar(root), createTaskList(taskState), createNotes(), createTagPopoverLayer());
-  root.addEventListener('pointermove', handleDragMove);
-  root.addEventListener('pointerup', finishDrag);
-  root.addEventListener('pointercancel', cancelDrag);
-  root.addEventListener('contextmenu', cancelDragContextMenu);
+  initialDayClaim = bindDayWindowHandoff(root).then(() => claimDayWindowDate(currentDay.date)).catch(console.error);
+  root.append(createTitleBar(), createHeader(root), createToolbar(root), createTaskScrollRegion(taskState), createNotes(), createTagPopoverLayer());
+  taskDragController = createTaskDragController({
+    root,
+    getItems: () => taskState,
+    getOptions: () => ({ showDeletedTasks, searchQuery }),
+    getList: () => root.querySelector('.task-list'),
+    getTree: () => root.querySelector('.task-tree'),
+    rowSelector: '.task-row',
+    canStart: () => !editingTaskId && !isDayLoading && !pendingCompletions.size && !root.querySelector('.children.is-animating'),
+    createPreview: (task, target, items) => createTaskNode(task, target.depth, getPreviewParentTags(items, target.parentId) || []),
+    afterLayout: () => {
+      applyTagLineReserve(root);
+      applyTreeBranchLayout(root);
+    },
+    onPrepare: () => {
+      cancelCompletionMoves();
+      closeTaskContextMenu();
+      closeTaskColorPalette();
+      closeTagPopover();
+      renderTagPopoverOnly(root);
+    },
+    onCommit: (items) => {
+      taskState = markMovedReminders(taskState, items);
+      persistCurrentDaySoon();
+      renderDayView(root);
+    },
+  });
   bindGlobalEscapeShortcut();
   bindFlushBeforeExit();
   bindExitRequestHandler();
   bindTagTemplateUpdateHandler(root);
+  bindDayUpdateHandler(root);
+  bindThemeUpdateHandler(root);
+  bindStorageUpdateHandler(root);
   bindTagPopoverViewportHandlers();
   bindTagPopoverOutsideHandler();
+  bindTaskColorPaletteHandlers();
+  window.addEventListener('calendar://save-error', () => showToast('保存失败，修改仍保留在当前窗口，请稍后重试'));
+  bindCalendarNavigation(target => {
+    if ((target.taskId || target.note) && (!target.date || target.date === currentDay.date)) {
+      pendingReveal = target;
+      if (!isDayLoading) revealSearchTarget(root);
+    }
+  });
   bindTagPopoverScrollHandler(root);
   queueTaskTreeLayout(root);
   loadCurrentDay(root);
@@ -148,6 +209,7 @@ function createHeader(root) {
           <button class="date-nav-button previous-day" type="button" title="前一天" aria-label="前一天">‹</button>
           <span class="day-date-text">${escapeHtml(dayMeta.subtitle)}</span>
           <button class="date-nav-button next-day" type="button" title="后一天" aria-label="后一天">›</button>
+          ${currentDay.date === getTodayDateKey() ? '' : `<button class="current-date-button day-current-button" type="button" title="回到今日" aria-label="回到今日">${icon('restore')}</button>`}
         </div>
       `;
   header.innerHTML = `
@@ -157,9 +219,9 @@ function createHeader(root) {
         ${subtitleMarkup}
       </div>
       <div class="header-actions">
-        <button class="icon-button" title="打开日历" aria-label="打开日历">${icon('calendar')}</button>
-        <button class="icon-button search-toggle${isSearchOpen ? ' is-active' : ''}" title="全局搜索" aria-label="全局搜索">${icon('search')}</button>
-        <button class="icon-button settings-toggle" title="设置" aria-label="设置">${icon('settings')}</button>
+        <button class="header-tool month-view-toggle" type="button" aria-label="月视图">${icon('calendar')}<span class="header-tool-label" aria-hidden="true">月视图</span></button>
+        <button class="header-tool search-toggle${isSearchOpen ? ' is-active' : ''}" type="button" aria-label="搜索" aria-pressed="${isSearchOpen}">${icon('search')}<span class="header-tool-label" aria-hidden="true">搜索</span></button>
+        <button class="header-tool settings-toggle" type="button" aria-label="设置">${icon('settings')}<span class="header-tool-label" aria-hidden="true">设置</span></button>
       </div>
     </div>
     ${isSearchOpen ? '<input class="task-search-input" type="search" placeholder="搜索任务名称" aria-label="搜索任务名称" />' : ''}
@@ -172,13 +234,19 @@ function createHeader(root) {
     renderDayView(root);
   });
   header.querySelector('.settings-toggle')?.addEventListener('click', () => {
-    showSettingsDialog();
+    openSettingsWindow();
+  });
+  header.querySelector('.month-view-toggle')?.addEventListener('click', () => {
+    openMonthWindow();
   });
   header.querySelector('.previous-day')?.addEventListener('click', () => {
     switchDay(root, -1);
   });
   header.querySelector('.next-day')?.addEventListener('click', () => {
     switchDay(root, 1);
+  });
+  header.querySelector('.day-current-button')?.addEventListener('click', () => {
+    switchToDay(root, getTodayDateKey());
   });
   const input = header.querySelector('.task-search-input');
   if (input) {
@@ -208,6 +276,22 @@ function createHeader(root) {
   return header;
 }
 
+function resetDayViewState(dateKey = getTodayDateKey()) {
+  currentDay = createEmptyDay(dateKey || getTodayDateKey());
+  taskState = currentDay.tasks;
+  editingTaskId = null;
+  draftTaskId = null;
+  taskDragController?.cancel();
+  isSearchOpen = false;
+  searchQuery = '';
+  dailyNoteText = currentDay.note;
+  isDayLoading = true;
+  loadErrorMessage = '';
+  activeTagPopoverTaskId = null;
+  activeTagPopoverAnchor = null;
+  temporaryTagText = '';
+}
+
 function createToolbar(root) {
   const toolbar = el('section', 'day-toolbar');
   toolbar.innerHTML = `
@@ -227,6 +311,18 @@ function createToolbar(root) {
   return toolbar;
 }
 
+function createTaskScrollRegion(items) {
+  const list = createTaskList(items);
+  const summary = list.querySelector('.status-summary');
+  summary?.remove();
+  const region = createScrollRegion(list, {
+    className: 'task-scroll-region', label: '任务',
+    topInset: () => summary?.offsetHeight || 0,
+  });
+  if (summary) region.prepend(summary);
+  return region;
+}
+
 function createTaskList(items) {
   const list = el('section', 'task-list');
   if (isDayLoading) {
@@ -237,6 +333,12 @@ function createTaskList(items) {
   }
 
   list.append(createStatusSummary(items));
+  list.addEventListener('contextmenu', (event) => {
+    if (event.target.closest('.task-row, input, textarea, select, [contenteditable="true"]')) {
+      return;
+    }
+    openTaskListContextMenu(event);
+  });
   const tree = el('div', 'task-tree');
   const visibleTasks = getVisibleTaskTree(items);
   visibleTasks.forEach((task) => tree.append(createTaskNode(task, 0, [])));
@@ -244,6 +346,8 @@ function createTaskList(items) {
     const empty = el('div', 'search-empty');
     empty.textContent = '没有找到相关任务';
     tree.append(empty);
+  } else if (visibleTasks.length === 0) {
+    tree.append(createBotanicalEmpty('留一点空白，也很好', '从一件小事开始，或记下今天的想法。'));
   }
   list.append(tree);
   return list;
@@ -274,22 +378,9 @@ function createTaskNode(task, depth, inheritedTags) {
   const hasChildren = Boolean(task.children?.length);
   const isCollapsed = hasChildren && task.collapsed;
   const wrapper = el('article', `task-node depth-${Math.min(depth, 3)}${hasChildren ? ' has-children' : ''}${isCollapsed ? ' is-collapsed' : ''}`);
+  wrapper.classList.toggle('is-completed-branch', hasChildren && task.status === 'completed');
   wrapper.style.setProperty('--depth', depth);
-  const row = el('div', `task-row is-${task.status}${task.long ? ' is-large' : ''}${task.id === editingTaskId ? ' is-editing' : ''}${activeTagPopoverTaskId === task.id ? ' has-tag-popover' : ''}${hasChildren ? ' has-children' : ''}${isCollapsed ? ' is-collapsed' : ''}`);
-  row.dataset.taskId = task.id;
-  row.dataset.depth = String(depth);
-  row.style.setProperty('--depth', depth);
-  row.style.setProperty('--accent', getTagColor(visibleTags[0]));
-
-  row.append(createDragHandle(task), createStatusButton(task), createTaskBody(task, visibleTags), createTaskActions(task));
-  if (canMoveTask(task)) {
-    row.querySelector('.drag-handle')?.addEventListener('pointerdown', (event) => {
-      startDrag(event, task.id, row);
-    });
-  }
-  if (hasChildren) {
-    row.append(createCollapseToggle(task));
-  }
+  const row = createTaskRow(task, depth, visibleTags);
   const branch = el('div', 'tree-branch');
   branch.append(el('span', `tree-leaf-node${hasChildren ? ' has-children' : ''}`));
   wrapper.append(branch, row);
@@ -297,12 +388,45 @@ function createTaskNode(task, depth, inheritedTags) {
   if (hasChildren) {
     const children = el('div', `children${isCollapsed ? ' is-collapsed' : ''}`);
     getVisibleTaskTree(task.children).forEach((child) => children.append(createTaskNode(child, depth + 1, inherited)));
-    if (children.childElementCount > 0) {
-      wrapper.append(children);
-    }
+    if (children.childElementCount > 0) wrapper.append(children);
   }
-
   return wrapper;
+}
+
+function createTaskRow(task, depth, visibleTags) {
+  const hasChildren = Boolean(task.children?.length);
+  const isCollapsed = hasChildren && task.collapsed;
+  const row = el('div', `task-row is-${task.status}${task.color ? ' has-custom-color' : ''}${task.long ? ' is-large' : ''}${task.id === editingTaskId ? ' is-editing' : ''}${activeTagPopoverTaskId === task.id ? ' has-tag-popover' : ''}${hasChildren ? ' has-children' : ''}${isCollapsed ? ' is-collapsed' : ''}`);
+  row.classList.toggle('is-reminder', Boolean(task.reminder));
+  row.classList.toggle('is-pinned-task', Boolean(task.pinned));
+  row.dataset.taskId = task.id;
+  row.dataset.depth = String(depth);
+  row.style.setProperty('--depth', depth);
+  row.style.setProperty('--accent', getTaskAccentColor(task));
+
+  row.append(createDragHandle(task), createStatusButton(task), createTaskBody(task, visibleTags), createTaskActions(task), createTaskColorButton(task));
+  if (task.reminder) {
+    const badge = el('button', 'reminder-task-badge'); badge.type = 'button';
+    badge.innerHTML = icon(task.kind === 'birthday' ? 'cake' : task.kind === 'anniversary' ? 'heart' : 'bell');
+    badge.title = `管理提醒 · ${task.reminder.schedule || ''}`;
+    badge.setAttribute('aria-label', badge.title);
+    badge.onclick = () => openMonth({ panel: 'reminders', ruleId: task.reminder.ruleId }).catch(console.error);
+    row.querySelector('.task-body').prepend(badge);
+  }
+  if (canMoveTask(task)) {
+    row.querySelector('.drag-handle')?.addEventListener('pointerdown', (event) => {
+      taskDragController?.start(event, task.id, row);
+    });
+  }
+  if (canDeleteTask(task)) {
+    row.addEventListener('contextmenu', (event) => {
+      openTaskContextMenu(event, task);
+    });
+  }
+  if (hasChildren) {
+    row.append(createCollapseToggle(task));
+  }
+  return row;
 }
 
 function createCollapseToggle(task) {
@@ -338,8 +462,10 @@ function createDragHandle(task) {
 
 function createStatusButton(task) {
   const button = el('button', `status-button ${task.status}`);
+  button.type = 'button';
   button.setAttribute('aria-label', taskStatusMeta[task.status].label);
-  button.textContent = taskStatusMeta[task.status].symbol;
+  if (task.status === 'completed') button.innerHTML = completionMarkup();
+  else button.textContent = taskStatusMeta[task.status].symbol;
   if (task.status === 'active' || task.status === 'completed') {
     button.title = task.status === 'active' ? '标记完成' : '改为进行中';
     button.addEventListener('click', (event) => {
@@ -397,6 +523,7 @@ function createTagAddButton(task) {
   button.innerHTML = icon('tag');
   button.addEventListener('click', (event) => {
     event.stopPropagation();
+    closeTaskColorPalette();
     const shouldClose = activeTagPopoverTaskId === task.id;
     activeTagPopoverTaskId = shouldClose ? null : task.id;
     activeTagPopoverAnchor = shouldClose ? null : getTagPopoverAnchor(event.currentTarget);
@@ -419,6 +546,10 @@ function createTagPopoverLayer() {
   layer.classList.add('is-open');
   layer.append(popover);
   applyTagPopoverPosition(popover, activeTagPopoverAnchor);
+  // The layer is assembled off-DOM; measure again once it has real dimensions.
+  queueMicrotask(() => {
+    if (popover.isConnected && activeTagPopoverAnchor) applyTagPopoverPosition(popover, activeTagPopoverAnchor);
+  });
   return layer;
 }
 
@@ -721,14 +852,28 @@ function getActiveTagGroup() {
 
 async function openTagManagerWindow() {
   try {
-    if (window.__TAURI__?.core?.invoke) {
-      await window.__TAURI__.core.invoke('open_tag_manager_window');
-      return;
-    }
-    window.open('index.html#tag-manager', 'tag-manager', 'width=760,height=520');
+    await openSharedSettingsWindow('tags');
   } catch (error) {
     console.error(error);
     showToast('打开长期标签管理失败');
+  }
+}
+
+async function openMonthWindow() {
+  try {
+    await openMonth();
+  } catch (error) {
+    console.error(error);
+    showToast('打开月视图失败');
+  }
+}
+
+async function openSettingsWindow() {
+  try {
+    await openSharedSettingsWindow();
+  } catch (error) {
+    console.error(error);
+    showToast('打开设置失败');
   }
 }
 
@@ -754,7 +899,321 @@ function createTaskActions(task) {
     actions.append(actionButton(icon('restore'), 'restore', '恢复进行中', () => restoreFailedTask(task.id)));
   }
   actions.append(actionButton(icon('trash'), 'delete', '删除', () => softDeleteTask(task.id)));
+  actions.querySelector('.delete')?.remove();
   return actions;
+}
+
+function createTaskColorButton(task) {
+  if (!canColorTask(task)) {
+    const spacer = el('span', 'task-color-spacer');
+    spacer.setAttribute('aria-hidden', 'true');
+    return spacer;
+  }
+
+  const button = el('button', `task-color-button${task.color ? ' has-custom-color' : ''}`);
+  const currentColor = getTaskAccentColor(task);
+  button.type = 'button';
+  button.style.setProperty('--task-color', currentColor);
+  button.title = '选择任务颜色';
+  button.setAttribute('aria-label', button.title);
+  button.setAttribute('aria-haspopup', 'dialog');
+  button.setAttribute('aria-expanded', 'false');
+  button.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (taskColorPalette?.taskId === task.id) {
+      closeTaskColorPalette();
+      return;
+    }
+    closeTaskColorPalette();
+    closeTaskContextMenu();
+    closeTagPopover();
+    renderTagPopoverOnly(document.querySelector('.day-window'));
+    openTaskColorPalette(task, button);
+  });
+  return button;
+}
+
+function canColorTask(task) {
+  return task.status === 'active';
+}
+
+function setTaskColor(taskId, color) {
+  const task = findTask(taskState, taskId);
+  if (!task || !canColorTask(task) || (color !== null && !taskColors.includes(color))) {
+    return;
+  }
+
+  if (color === null) {
+    delete task.color;
+  } else {
+    task.color = color;
+  }
+
+  persistCurrentDaySoon();
+  updateTaskColorInPlace(task);
+}
+
+function openTaskColorPalette(task, trigger) {
+  const palette = el('section', 'task-color-palette');
+  palette.setAttribute('role', 'dialog');
+  palette.setAttribute('aria-label', '选择任务颜色');
+  palette.innerHTML = '<div class="task-color-palette-grid"></div>';
+
+  const grid = palette.querySelector('.task-color-palette-grid');
+  taskColors.forEach((color, index) => {
+    const button = el('button', `task-color-choice${task.color === color ? ' is-selected' : ''}`);
+    button.type = 'button';
+    button.title = taskColorNames[index];
+    button.setAttribute('aria-label', `设为${taskColorNames[index]}`);
+    button.setAttribute('aria-pressed', String(task.color === color));
+    const swatch = el('span', 'task-color-choice-swatch');
+    swatch.style.setProperty('--swatch', color);
+    swatch.textContent = task.color === color ? '✓' : '';
+    button.append(swatch);
+    button.addEventListener('click', () => {
+      setTaskColor(task.id, color);
+      closeTaskColorPalette(true);
+    });
+    grid.append(button);
+  });
+
+  const noColor = el('button', `task-color-choice task-color-none${task.color ? '' : ' is-selected'}`);
+  noColor.type = 'button';
+  noColor.title = '不设颜色';
+  noColor.setAttribute('aria-label', '不设颜色');
+  noColor.setAttribute('aria-pressed', String(!task.color));
+  noColor.innerHTML = '<span class="task-color-none-mark" aria-hidden="true"></span>';
+  noColor.addEventListener('click', () => {
+    setTaskColor(task.id, null);
+    closeTaskColorPalette(true);
+  });
+  grid.append(noColor);
+
+  document.body.append(palette);
+  taskColorPalette = { taskId: task.id, element: palette, trigger };
+  trigger.setAttribute('aria-expanded', 'true');
+  positionTaskColorPalette(palette, trigger);
+  (palette.querySelector('.task-color-choice.is-selected') || noColor).focus({ preventScroll: true });
+}
+
+function positionTaskColorPalette(palette, trigger) {
+  const margin = 10;
+  const gap = 8;
+  const anchor = trigger.getBoundingClientRect();
+  const bounds = palette.getBoundingClientRect();
+  const left = Math.max(margin, Math.min(anchor.right - bounds.width, window.innerWidth - bounds.width - margin));
+  const below = anchor.bottom + gap;
+  const above = anchor.top - bounds.height - gap;
+  const top = below + bounds.height <= window.innerHeight - margin ? below : Math.max(margin, above);
+  palette.style.left = `${left}px`;
+  palette.style.top = `${top}px`;
+}
+
+function closeTaskColorPalette(restoreFocus = false) {
+  if (!taskColorPalette) {
+    return;
+  }
+  const { element, trigger } = taskColorPalette;
+  taskColorPalette = null;
+  element.remove();
+  trigger.setAttribute('aria-expanded', 'false');
+  if (restoreFocus && trigger.isConnected) {
+    trigger.focus({ preventScroll: true });
+  }
+}
+
+function bindTaskColorPaletteHandlers() {
+  if (isTaskColorPaletteHandlerBound) {
+    return;
+  }
+  isTaskColorPaletteHandlerBound = true;
+  document.addEventListener('pointerdown', (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (taskColorPalette && !taskColorPalette.element.contains(target) && !target?.closest('.task-color-button')) {
+      closeTaskColorPalette();
+    }
+  }, true);
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && taskColorPalette) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeTaskColorPalette(true);
+    }
+  }, true);
+  document.addEventListener('scroll', (event) => {
+    if (taskColorPalette && !taskColorPalette.element.contains(event.target)) {
+      closeTaskColorPalette();
+    }
+  }, true);
+  window.addEventListener('resize', () => closeTaskColorPalette());
+  window.addEventListener('blur', () => closeTaskColorPalette());
+}
+
+function updateTaskColorInPlace(task) {
+  const row = getTaskRow(task.id);
+  if (!row) {
+    return;
+  }
+
+  const color = getTaskAccentColor(task);
+  row.style.setProperty('--accent', color);
+  row.classList.toggle('has-custom-color', Boolean(task.color));
+
+  const button = row.querySelector('.task-color-button');
+  if (!button) {
+    return;
+  }
+  button.style.setProperty('--task-color', color);
+  button.classList.toggle('has-custom-color', Boolean(task.color));
+  button.title = '选择任务颜色';
+  button.setAttribute('aria-label', button.title);
+}
+
+function canDeleteTask(task) {
+  return task.status !== 'deleted';
+}
+
+function openTaskContextMenu(event, task) {
+  if (!canDeleteTask(task) || editingTaskId || taskDragController?.active) {
+    return;
+  }
+  if (event.target.closest('input, textarea, select, [contenteditable="true"]')) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  closeTaskContextMenu();
+
+  const menu = el('div', 'task-context-menu');
+  menu.setAttribute('role', 'menu');
+  menu.append(createTaskContextMenuItem('复制', '', () => copyTaskFromDay(task)));
+  menu.append(createTaskContextMenuItem(task.pinned ? '取消任务置顶' : '置顶任务', '', () => {
+    task.pinned = !task.pinned; persistCurrentDaySoon(); renderDayView(document.querySelector('.day-window'));
+  }, icon('pin')));
+  if (task.reminder) menu.append(createTaskContextMenuItem('管理重复提醒', '', () => openMonth({ panel: 'reminders', ruleId: task.reminder.ruleId }), icon('bell')));
+  if (canPasteToDate(currentDay.date)) {
+    menu.append(createTaskContextMenuItem('粘贴', '', pasteTaskAsRoot));
+    if (task.status === 'active') {
+      menu.append(createTaskContextMenuItem('粘贴为子任务', '', () => pasteTaskAsChild(task.id)));
+    }
+  }
+  menu.append(createTaskContextMenuItem('删除', 'danger', () => softDeleteTask(task.id), icon('trash')));
+  openTaskContextMenuElement(menu, event.clientX, event.clientY);
+}
+
+function openTaskListContextMenu(event) {
+  if (editingTaskId || taskDragController?.active || !canPasteToDate(currentDay.date)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  closeTaskContextMenu();
+
+  const menu = el('div', 'task-context-menu');
+  menu.setAttribute('role', 'menu');
+  menu.append(createTaskContextMenuItem('粘贴', '', pasteTaskAsRoot));
+  openTaskContextMenuElement(menu, event.clientX, event.clientY);
+}
+
+function createTaskContextMenuItem(label, className, onClick, leading = '') {
+  const button = el('button', `task-context-menu-item ${className}`.trim());
+  button.type = 'button';
+  button.setAttribute('role', 'menuitem');
+  button.innerHTML = `${leading}<span>${escapeHtml(label)}</span>`;
+  button.addEventListener('click', () => {
+    closeTaskContextMenu();
+    onClick?.();
+  });
+  return button;
+}
+
+function openTaskContextMenuElement(menu, clientX, clientY) {
+  document.body.append(menu);
+  positionTaskContextMenu(menu, clientX, clientY);
+  taskContextMenu = menu;
+
+  window.addEventListener('keydown', handleTaskContextMenuKeydown, true);
+  window.addEventListener('resize', closeTaskContextMenu);
+  window.addEventListener('blur', closeTaskContextMenu);
+  document.addEventListener('pointerdown', handleTaskContextMenuOutsidePointerDown, true);
+  document.addEventListener('scroll', closeTaskContextMenu, true);
+}
+
+function copyTaskFromDay(task) {
+  copyTask({ sourceDate: currentDay.date, task });
+  showToast('已复制任务');
+}
+
+function pasteTaskAsRoot() {
+  const task = createPastedTaskFromClipboard();
+  if (!task || !canPasteToDate(currentDay.date)) {
+    return;
+  }
+  taskState.push(task);
+  persistCurrentDaySoon();
+  renderDayView(document.querySelector('.day-window'));
+  markNewShoot(document.querySelector(`.task-row[data-task-id="${CSS.escape(task.id)}"]`), themeSettings);
+}
+
+function pasteTaskAsChild(parentTaskId) {
+  const parent = findTask(taskState, parentTaskId);
+  const task = createPastedTaskFromClipboard();
+  if (!parent || parent.status !== 'active' || !task || !canPasteToDate(currentDay.date)) {
+    return;
+  }
+  parent.children ||= [];
+  parent.children.push(task);
+  parent.collapsed = false;
+  persistCurrentDaySoon();
+  renderDayView(document.querySelector('.day-window'));
+  markNewShoot(document.querySelector(`.task-row[data-task-id="${CSS.escape(task.id)}"]`), themeSettings);
+}
+
+function positionTaskContextMenu(menu, clientX, clientY) {
+  const margin = 8;
+  const rect = menu.getBoundingClientRect();
+  const left = Math.min(clientX, window.innerWidth - rect.width - margin);
+  const top = Math.min(clientY, window.innerHeight - rect.height - margin);
+  menu.style.left = `${Math.max(margin, left)}px`;
+  menu.style.top = `${Math.max(margin, top)}px`;
+}
+
+function closeTaskContextMenu() {
+  if (!taskContextMenu) {
+    return;
+  }
+
+  taskContextMenu.remove();
+  taskContextMenu = null;
+  window.removeEventListener('keydown', handleTaskContextMenuKeydown, true);
+  window.removeEventListener('resize', closeTaskContextMenu);
+  window.removeEventListener('blur', closeTaskContextMenu);
+  document.removeEventListener('pointerdown', handleTaskContextMenuOutsidePointerDown, true);
+  document.removeEventListener('scroll', closeTaskContextMenu, true);
+}
+
+function handleTaskContextMenuKeydown(event) {
+  if (event.key !== 'Escape') {
+    return;
+  }
+
+  event.preventDefault();
+  closeTaskContextMenu();
+}
+
+function handleTaskContextMenuOutsidePointerDown(event) {
+  if (taskContextMenu?.contains(event.target)) {
+    return;
+  }
+
+  closeTaskContextMenu();
 }
 
 function createNotes() {
@@ -762,7 +1221,7 @@ function createNotes() {
   notes.style.setProperty('--note-height', `${dailyNoteHeight}px`);
   notes.innerHTML = `
     <div class="note-resize-handle" title="拖动调整高度" aria-hidden="true"></div>
-    <h2>今日所思所想</h2>
+    <h2>${sproutMarkup('note-sprout')}今日所思所想</h2>
     <textarea class="note-editor" aria-label="今日所思所想" placeholder="记录今天的想法..."></textarea>
   `;
   const editor = notes.querySelector('.note-editor');
@@ -790,7 +1249,8 @@ function createTaskTitleText(task) {
   if (canEditTask(task)) {
     title.title = '点击编辑任务';
     title.addEventListener('click', () => {
-      editingTaskId = task.id;
+        removeEmptyDraftTask();
+        editingTaskId = task.id;
       renderDayView(document.querySelector('.day-window'));
     });
   }
@@ -913,6 +1373,35 @@ function bindExitRequestHandler() {
   });
 }
 
+async function bindDayWindowHandoff(root) {
+  const listen = window.__TAURI__?.event?.listen;
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!listen || !invoke) return;
+  const restore = id => {
+    if (dayHandoffId !== id) return;
+    dayHandoffId = null; dayWindowRetired = false; root.inert = false;
+  };
+  await Promise.all([
+    listen('calendar://day-handoff-requested', async event => {
+      const id = event.payload?.id;
+      if (!id) return;
+      try {
+        if (daySwitchInFlight || isDayLoading || dayHandoffId || taskDragController?.active) throw new Error('日视图正在操作中，请稍后重试');
+        dayHandoffId = id; root.inert = true;
+        await persistCurrentDayNow();
+        if (dayHandoffId !== id) throw new Error('日视图交接已取消');
+        dayWindowRetired = true;
+        await invoke('complete_day_window_handoff', { id });
+      } catch (error) {
+        restore(id);
+        await invoke('complete_day_window_handoff', { id, error: String(error.message || error) }).catch(console.error);
+      }
+    }),
+    listen('calendar://day-handoff-cancelled', event => restore(event.payload?.id)),
+    listen('calendar://show-today-requested', () => openDay(getTodayDateKey()).catch(console.error)),
+  ]);
+}
+
 function bindTagTemplateUpdateHandler(root) {
   if (isTagTemplateUpdateHandlerBound) {
     return;
@@ -922,11 +1411,7 @@ function bindTagTemplateUpdateHandler(root) {
   const refreshTemplates = async () => {
     try {
       tagTemplates = await loadTagTemplates();
-      activeTagGroupId = tagTemplates.groups.some((group) => group.id === activeTagGroupId)
-        ? activeTagGroupId
-        : tagTemplates.groups[0]?.id || null;
-      activeTagGroupPage = 0;
-      renderDayView(root);
+      renderTagPopoverOnly(root);
     } catch (error) {
       console.error(error);
       showToast('刷新长期标签失败');
@@ -938,6 +1423,72 @@ function bindTagTemplateUpdateHandler(root) {
   }
 
   window.addEventListener('calendar://tag-templates-updated', refreshTemplates);
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'desktop-calendar:tag-templates') refreshTemplates();
+  });
+}
+
+function bindDayUpdateHandler(root) {
+  if (isDayUpdateHandlerBound) {
+    return;
+  }
+
+  isDayUpdateHandlerBound = true;
+  const refreshDay = async (event) => {
+    if (dayWindowRetired || dayHandoffId || daySwitchInFlight) return;
+    const dateKey = event?.payload?.date || event?.detail?.date;
+    const originId = event?.payload?.originId || event?.detail?.originId;
+    if (!dateKey || dateKey !== currentDay.date || originId === getDayStorageOriginId()) {
+      return;
+    }
+    if (isDayLoading) { dayRefreshPending = true; return; }
+    try { await flushDaySave(); await loadCurrentDay(root); } catch (error) { console.error(error); }
+  };
+
+  if (window.__TAURI__?.event?.listen) {
+    window.__TAURI__.event.listen('calendar://day-updated', refreshDay);
+  }
+
+  window.addEventListener('calendar://day-updated', refreshDay);
+  window.addEventListener('storage', event => {
+    if (event.key === `desktop-calendar:day:${currentDay.date}`) refreshDay({ detail: { date: currentDay.date } });
+  });
+}
+
+function bindThemeUpdateHandler(root) {
+  if (isThemeUpdateHandlerBound) {
+    return;
+  }
+
+  isThemeUpdateHandlerBound = true;
+  const refreshTheme = (event) => {
+    themeSettings = applyThemeSettings(event?.payload?.settings || event?.detail?.settings || loadThemeSettings());
+    renderDayView(root);
+  };
+
+  if (window.__TAURI__?.event?.listen) {
+    window.__TAURI__.event.listen('calendar://theme-updated', refreshTheme);
+  }
+
+  window.addEventListener('calendar://theme-updated', refreshTheme);
+}
+
+function bindStorageUpdateHandler(root) {
+  if (isStorageUpdateHandlerBound) {
+    return;
+  }
+
+  isStorageUpdateHandlerBound = true;
+  const refreshStorage = async (event) => {
+    storageLocation = event?.payload?.location || event?.detail?.location || storageLocation;
+    await reloadCurrentStorage(root);
+  };
+
+  if (window.__TAURI__?.event?.listen) {
+    window.__TAURI__.event.listen('calendar://storage-updated', refreshStorage);
+  }
+
+  window.addEventListener('calendar://storage-updated', refreshStorage);
 }
 
 function bindTagPopoverViewportHandlers() {
@@ -1016,6 +1567,7 @@ async function loadCurrentDay(root) {
   renderDayView(root);
 
   try {
+    await ensureReminders(currentDay.date).catch(error => { console.error(error); showToast('提醒暂未生成，请稍后重试'); });
     const [storedDay, storedTagTemplates, storedLocation] = await Promise.all([
       loadDay(currentDay.date),
       loadTagTemplates(),
@@ -1023,7 +1575,6 @@ async function loadCurrentDay(root) {
     ]);
     tagTemplates = storedTagTemplates;
     storageLocation = storedLocation;
-    activeTagGroupId ||= tagTemplates.groups[0]?.id || null;
     currentDay = normalizeDay(storedDay || currentDay);
   } catch (error) {
     loadErrorMessage = '读取本地数据失败，当前显示临时数据';
@@ -1036,6 +1587,30 @@ async function loadCurrentDay(root) {
   isDayLoading = false;
   renderDayView(root);
   renderNotesOnly(root);
+  revealSearchTarget(root);
+  if (dayRefreshPending) { dayRefreshPending = false; queueMicrotask(() => { if (root.isConnected) loadCurrentDay(root); }); }
+}
+
+function revealSearchTarget(root) {
+  const target = pendingReveal;
+  if (!target || isDayLoading) return;
+  if (target.taskId && !findTask(taskState, target.taskId) && dayRefreshPending) return;
+  pendingReveal = null;
+  if (target.includeDeleted) showDeletedTasks = true;
+  isSearchOpen = false; searchQuery = '';
+  const expand = tasks => tasks.some(task => {
+    if (task.id === target.taskId) return true;
+    if (expand(task.children || [])) { task.collapsed = false; return true; }
+    return false;
+  });
+  expand(taskState); renderDayView(root);
+  requestAnimationFrame(() => {
+    const node = target.note ? root.querySelector('.note-editor') : [...root.querySelectorAll('.task-row')].find(row => row.dataset.taskId === target.taskId);
+    if (!node) return;
+    node.scrollIntoView({ block: 'center', behavior: 'smooth' }); node.classList.add('is-search-located');
+    if (target.note) node.focus({ preventScroll: true });
+    setTimeout(() => node.classList.remove('is-search-located'), 2600);
+  });
 }
 
 async function reloadCurrentStorage(root) {
@@ -1044,48 +1619,67 @@ async function reloadCurrentStorage(root) {
   dailyNoteText = currentDay.note;
   activeTagPopoverTaskId = null;
   activeTagPopoverAnchor = null;
-  activeTagGroupId = null;
-  activeTagGroupPage = 0;
   await loadCurrentDay(root);
 }
 
 async function switchDay(root, offsetDays) {
-  if (!root || isDayLoading) {
+  await switchToDay(root, shiftDateKey(currentDay.date, offsetDays));
+}
+
+async function switchToDay(root, nextDate) {
+  if (!root || isDayLoading || daySwitchInFlight || dayWindowRetired || dayHandoffId) {
     return;
   }
 
-  const nextDate = shiftDateKey(currentDay.date, offsetDays);
   if (nextDate === currentDay.date) {
     return;
   }
 
+  daySwitchInFlight = true; root.inert = true;
   try {
+    await initialDayClaim;
     await persistCurrentDayNow();
+    if (!await claimDayWindowDate(nextDate, true)) {
+      return;
+    }
+    resetTransientDayState();
+    currentDay = createEmptyDay(nextDate);
+    taskState = currentDay.tasks;
+    dailyNoteText = currentDay.note;
+    const url = new URL(location.href);
+    url.searchParams.set('date', nextDate);
+    url.searchParams.delete('taskId'); url.searchParams.delete('note'); url.searchParams.delete('deleted');
+    url.hash = '';
+    history.replaceState(null, '', url);
+    await loadCurrentDay(root);
   } catch (error) {
     console.error(error);
-    showToast('保存当前日期失败');
-    return;
+    showToast(`切换日期失败：${error.message || error}`);
+  } finally {
+    daySwitchInFlight = false;
+    if (!dayWindowRetired && !dayHandoffId) root.inert = false;
   }
+}
 
-  resetTransientDayState();
-  currentDay = createEmptyDay(nextDate);
-  taskState = currentDay.tasks;
-  dailyNoteText = currentDay.note;
-  await loadCurrentDay(root);
+function claimDayWindowDate(date, takeOver = false) {
+  if (!window.__TAURI__?.core?.invoke) {
+    window.name = `day-${date}`;
+    return Promise.resolve(true);
+  }
+  return window.__TAURI__.core.invoke('claim_day_window_date', { date, takeOver });
 }
 
 function resetTransientDayState() {
+  closeTaskContextMenu();
+  closeTaskColorPalette();
   editingTaskId = null;
+  removeEmptyDraftTask();
   isSearchOpen = false;
   searchQuery = '';
   activeTagPopoverTaskId = null;
   activeTagPopoverAnchor = null;
-  activeTagGroupId = null;
-  activeTagGroupPage = 0;
   temporaryTagText = '';
-  clearDropPreview();
-  dragState = null;
-  dropPreview = null;
+  taskDragController?.cancel();
   document.body.classList.remove('is-task-dragging');
 }
 
@@ -1094,7 +1688,7 @@ function normalizeDay(day) {
   return {
     date: day.date || currentDay.date,
     note: day.note || '',
-    tasks: normalizeTaskTree(normalizeTaskTags(tasks, tagPalette)),
+    tasks: removeEmptyTasks(normalizeTaskTree(normalizeTaskTags(tasks, tagPalette))),
   };
 }
 
@@ -1106,15 +1700,50 @@ function createEmptyDay(date) {
   };
 }
 
+function removeEmptyTasks(tasks) {
+  return (tasks || [])
+    .map((task) => ({
+      ...task,
+      children: removeEmptyTasks(task.children || []),
+    }))
+    .filter((task) => {
+      const hasTitle = typeof task.title === 'string' && task.title.trim();
+      const hasTags = Array.isArray(task.tags) && task.tags.length > 0;
+      const hasChildren = Array.isArray(task.children) && task.children.length > 0;
+      return hasTitle || hasTags || hasChildren || task.status !== 'active';
+    });
+}
+
+function getPersistableTasks(tasks) {
+  return removeEmptyTasks(structuredClone(tasks || []));
+}
+
+function removeEmptyDraftTask() {
+  if (!draftTaskId) {
+    return false;
+  }
+
+  const draft = findTask(taskState, draftTaskId);
+  if (!draft || draft.title.trim()) {
+    draftTaskId = null;
+    return false;
+  }
+
+  removeTask(taskState, draftTaskId);
+  draftTaskId = null;
+  persistCurrentDaySoon();
+  return true;
+}
+
 function persistCurrentDaySoon() {
-  if (isDayLoading) {
+  if (isDayLoading || dayWindowRetired) {
     return;
   }
 
   currentDay = {
     ...currentDay,
     note: dailyNoteText,
-    tasks: taskState,
+    tasks: getPersistableTasks(taskState),
   };
   scheduleSaveDay(currentDay);
 }
@@ -1130,7 +1759,7 @@ function shouldKeepEscapeInDayView(event) {
     event.defaultPrevented
     || editingTaskId
     || isSearchOpen
-    || dragState
+    || taskDragController?.active
     || target?.closest('input, textarea, select, [contenteditable="true"]')
   );
 }
@@ -1153,7 +1782,7 @@ function addRootTask(root) {
   const task = createBlankTask();
   taskState.push(task);
   editingTaskId = task.id;
-  persistCurrentDaySoon();
+  draftTaskId = task.id;
   renderDayView(root);
   revealTaskAfterRender(root, task.id);
 }
@@ -1170,7 +1799,7 @@ function addChildTask(parentId) {
   parent.children.push(child);
   parent.collapsed = false;
   editingTaskId = child.id;
-  persistCurrentDaySoon();
+  draftTaskId = child.id;
   renderDayView(root);
   revealTaskAfterRender(root, child.id);
 }
@@ -1196,6 +1825,7 @@ function revealTaskAfterRender(root, taskId) {
 }
 
 function toggleTaskCollapse(taskId) {
+  settleCompletionFeedback(document.querySelector('.day-window'), false);
   const task = findTask(taskState, taskId);
   if (!task?.children?.length) {
     return;
@@ -1266,6 +1896,9 @@ function finishTaskEditing(task) {
   } else {
     task.title = normalizedTitle;
   }
+  if (draftTaskId === task.id) {
+    draftTaskId = null;
+  }
   editingTaskId = null;
   persistCurrentDaySoon();
   renderDayView(document.querySelector('.day-window'));
@@ -1275,6 +1908,9 @@ function cancelEmptyTask(task) {
   if (!task.title.trim()) {
     removeTask(taskState, task.id);
     persistCurrentDaySoon();
+  }
+  if (draftTaskId === task.id) {
+    draftTaskId = null;
   }
   editingTaskId = null;
   renderDayView(document.querySelector('.day-window'));
@@ -1291,12 +1927,105 @@ function toggleTaskCompletion(taskId) {
     return;
   }
 
-  animateTaskLayout(document.querySelector('.day-window'), () => {
-    const nextStatus = task.status === 'active' ? 'completed' : 'active';
-    task.status = nextStatus;
-    if (nextStatus === 'completed' && task.children?.length) {
-      task.collapsed = true;
+  const root = document.querySelector('.day-window');
+  if (document.body.classList.contains('is-task-dragging')) return;
+  closeTaskContextMenu();
+  closeTaskColorPalette();
+  closeTagPopover();
+  renderTagPopoverOnly(root);
+  task.status = task.status === 'active' ? 'completed' : 'active';
+  if (task.status === 'completed' && task.children?.length) task.collapsed = true;
+  // Save immediately. Animation never delays persistence or changes task semantics.
+  persistCurrentDaySoon();
+  const row = root?.querySelector(`.task-row[data-task-id="${CSS.escape(taskId)}"]`);
+  if (!row) { renderDayView(root); return; }
+  const wrapper = row.closest('.task-node');
+  const location = getTaskLocation(taskState, taskId);
+  const inherited = getPreviewParentTags(taskState, location?.parentId) || [];
+  const nextRow = createTaskRow(task, Number(row.dataset.depth), [...inherited, ...task.tags]);
+  const bloom = task.status === 'completed' && botanicalMotionEnabled(themeSettings);
+  if (bloom) nextRow.style.minHeight = `${row.getBoundingClientRect().height}px`;
+  const hadFocus = row.contains(document.activeElement);
+  row.replaceWith(nextRow);
+  applyTagLineReserve(nextRow);
+  if (hadFocus) nextRow.querySelector('.status-button')?.focus({ preventScroll: true });
+  wrapper.classList.toggle('is-completed-branch', task.status === 'completed' && Boolean(task.children?.length));
+  const summary = root.querySelector('.status-summary');
+  if (summary) summary.innerHTML = createStatusSummary(taskState).innerHTML;
+  if (bloom) {
+    nextRow.classList.add('is-blooming');
+    if (task.children?.length) wrapper.classList.add('is-branch-blooming');
+  }
+  pendingCompletions.set(taskId, wrapper);
+  clearTimeout(completionSettleTimer);
+  if (bloom || [...pendingCompletions.values()].some(node => node.querySelector(':scope > .is-blooming'))) {
+    completionSettleTimer = window.setTimeout(() => settleCompletionFeedback(root), 440);
+  } else settleCompletionFeedback(root);
+}
+
+function cancelCompletionMoves() {
+  completionMoves.forEach(animation => animation.cancel());
+  completionMoves.clear();
+}
+
+function clearCompletionFeedback() {
+  clearTimeout(completionSettleTimer);
+  completionSettleTimer = 0;
+  pendingCompletions.clear();
+  cancelCompletionMoves();
+}
+
+function settleCompletionFeedback(root, animate = true) {
+  clearTimeout(completionSettleTimer);
+  completionSettleTimer = 0;
+  if (!root || !pendingCompletions.size) return;
+  cancelCompletionMoves();
+  const changedNodes = new Set([...pendingCompletions.values()].filter(node => node.isConnected));
+  const containers = new Set([...changedNodes].map(node => node.parentElement));
+  const nodes = [...new Set([...containers].flatMap(container => [...container.children].filter(node => node.matches('.task-node'))))];
+  const before = new Map(nodes.map(node => [node, node.getBoundingClientRect()]));
+  pendingCompletions.forEach((node, id) => {
+    const task = findTask(taskState, id);
+    if (!task || !node.isConnected) return;
+    const collapsed = Boolean(task.children?.length && task.collapsed);
+    node.classList.toggle('is-collapsed', collapsed);
+    node.querySelector(':scope > .task-row')?.classList.toggle('is-collapsed', collapsed);
+    node.querySelector(':scope > .children')?.classList.toggle('is-collapsed', collapsed);
+    node.querySelector(':scope > .task-row')?.classList.remove('is-blooming');
+    node.querySelector(':scope > .task-row')?.style.removeProperty('min-height');
+    node.classList.remove('is-branch-blooming');
+  });
+  pendingCompletions.clear();
+  containers.forEach(container => {
+    const parentId = container.matches('.children') ? container.parentElement.querySelector(':scope > .task-row')?.dataset.taskId : null;
+    const items = parentId ? findTask(taskState, parentId)?.children || [] : taskState;
+    const byId = new Map([...container.children].map(node => [node.querySelector(':scope > .task-row')?.dataset.taskId, node]));
+    let next = null;
+    [...getVisibleTaskTree(items)].reverse().forEach(task => {
+      const node = byId.get(task.id);
+      if (!node) return;
+      // Unchanged siblings already have the right relative order. Moving them all
+      // around one completed task causes needless subtree invalidation.
+      if (changedNodes.has(node) && node.nextElementSibling !== next) container.insertBefore(node, next);
+      next = node;
+    });
+  });
+  applyTreeBranchLayout(root);
+  if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const viewport = root.querySelector('.task-list').getBoundingClientRect();
+  // Batch layout reads before starting transform-only animations. Hidden/offscreen cards stay static.
+  const moves = nodes.map(node => ({ node, first: before.get(node), last: node.getBoundingClientRect() }))
+    .filter(({ first, last }) => first.height && (first.bottom >= viewport.top && first.top <= viewport.bottom || last.bottom >= viewport.top && last.top <= viewport.bottom))
+    .filter(({ first, last }) => Math.abs(first.top - last.top) > .5 || Math.abs(first.left - last.left) > .5);
+  const moved = new Set(moves.map(move => move.node));
+  moves.forEach(({ node, first, last }) => {
+    // A moving ancestor carries its subtree with it; do not apply the same displacement twice.
+    for (let ancestor = node.parentElement?.closest('.task-node'); ancestor; ancestor = ancestor.parentElement?.closest('.task-node')) {
+      if (moved.has(ancestor)) return;
     }
+    const animation = node.animate([{ transform: `translate(${first.left - last.left}px, ${first.top - last.top}px)` }, { transform: 'translate(0,0)' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    completionMoves.add(animation);
+    animation.finished.then(() => completionMoves.delete(animation)).catch(() => {});
   });
 }
 
@@ -1361,13 +2090,23 @@ function renderDayView(root) {
   if (!root) {
     return;
   }
+  clearCompletionFeedback();
+  taskDragController?.cancel();
+  closeTaskContextMenu();
+  closeTaskColorPalette();
   const currentList = root.querySelector('.task-list');
   const scrollTop = currentList?.scrollTop ?? 0;
   root.querySelector('.day-header')?.replaceWith(createHeader(root));
   root.querySelector('.day-toolbar')?.replaceWith(createToolbar(root));
-  const nextList = createTaskList(taskState);
-  currentList?.replaceWith(nextList);
+  const currentRegion = root.querySelector('.task-scroll-region');
+  const nextRegion = createTaskScrollRegion(taskState);
+  const nextList = nextRegion.querySelector('.task-list');
+  disposeScrollRegion(currentRegion);
+  currentRegion?.replaceWith(nextRegion);
   nextList.scrollTop = scrollTop;
+  window.requestAnimationFrame(() => {
+    nextList.scrollTop = scrollTop;
+  });
   root.querySelector('.tag-popover-layer')?.replaceWith(createTagPopoverLayer());
   bindTagPopoverScrollHandler(root);
   queueTaskTreeLayout(root);
@@ -1377,11 +2116,21 @@ function renderTaskAreaOnly(root) {
   if (!root) {
     return;
   }
+  clearCompletionFeedback();
+  taskDragController?.cancel();
+  closeTaskContextMenu();
+  closeTaskColorPalette();
   const currentList = root.querySelector('.task-list');
   const scrollTop = currentList?.scrollTop ?? 0;
-  const nextList = createTaskList(taskState);
-  currentList?.replaceWith(nextList);
+  const currentRegion = root.querySelector('.task-scroll-region');
+  const nextRegion = createTaskScrollRegion(taskState);
+  const nextList = nextRegion.querySelector('.task-list');
+  disposeScrollRegion(currentRegion);
+  currentRegion?.replaceWith(nextRegion);
   nextList.scrollTop = scrollTop;
+  window.requestAnimationFrame(() => {
+    nextList.scrollTop = scrollTop;
+  });
   root.querySelector('.tag-popover-layer')?.replaceWith(createTagPopoverLayer());
   bindTagPopoverScrollHandler(root);
   queueTaskTreeLayout(root);
@@ -1526,7 +2275,21 @@ function showConfirmDialog({ title, message, confirmText = '确认', confirmStyl
 function saveAndPreviewTheme(settings) {
   themeSettings = saveThemeSettings(settings);
   applyThemeSettings(themeSettings);
+  notifyThemeUpdated(themeSettings);
   return { ...themeSettings };
+}
+
+function notifyThemeUpdated(settings) {
+  const payload = { settings };
+  window.dispatchEvent(new CustomEvent('calendar://theme-updated', { detail: payload }));
+
+  if (!window.__TAURI__?.event?.emit) {
+    return;
+  }
+
+  window.__TAURI__.event.emit('calendar://theme-updated', payload).catch((error) => {
+    console.error(error);
+  });
 }
 
 function showSettingsDialog(initialTab = 'theme') {
@@ -1566,7 +2329,7 @@ function showSettingsDialog(initialTab = 'theme') {
       return;
     }
     grid.replaceChildren();
-    themePresets.forEach((preset) => {
+    getThemePresets(draftTheme.appearance).forEach((preset) => {
       const button = el('button', `theme-preset${draftTheme.presetId === preset.id ? ' is-active' : ''}`);
       button.type = 'button';
       button.style.setProperty('--preset-base', preset.color);
@@ -1589,9 +2352,9 @@ function showSettingsDialog(initialTab = 'theme') {
       <div class="settings-section-title">背景颜色</div>
       <div class="theme-preset-grid"></div>
       <label class="theme-opacity-control">
-        <span>背景透明度</span>
+        <span>背景不透明度</span>
         <strong class="theme-opacity-value">${Math.round(draftTheme.opacity * 100)}%</strong>
-        <input class="theme-opacity-input" type="range" min="34" max="82" step="1" value="${Math.round(draftTheme.opacity * 100)}" />
+        <input class="theme-opacity-input" type="range" min="34" max="100" step="1" value="${Math.round(draftTheme.opacity * 100)}" />
       </label>
     `;
     renderThemePresets();
@@ -1683,7 +2446,7 @@ function showSettingsDialog(initialTab = 'theme') {
   };
 
   overlay.querySelector('.reset-theme')?.addEventListener('click', () => {
-    draftTheme = saveAndPreviewTheme({ presetId: 'morning', opacity: 0.58 });
+    draftTheme = saveAndPreviewTheme(defaultTheme);
     renderThemePanel();
   });
   overlay.querySelectorAll('.settings-tab').forEach((button) => {
@@ -1748,513 +2511,24 @@ function getNormalizedSearchQuery() {
   return normalizeSearchQuery(searchQuery);
 }
 
-function startDrag(event, taskId, row) {
-  if (event.button !== 0 || editingTaskId) {
-    return;
-  }
-  const task = findTask(taskState, taskId);
-  if (!task || !canMoveTask(task)) {
-    return;
-  }
-  if (!event.target.closest('.drag-handle')) {
-    return;
-  }
-  event.preventDefault();
-
-  dragState = {
-    taskId,
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    row,
-    isDragging: false,
-    accent: row.style.getPropertyValue('--accent') || '#8da2b8',
-    previewHeight: row.offsetHeight,
-    stableTarget: null,
-    emptySince: null,
-  };
-
-  row.setPointerCapture?.(event.pointerId);
-  row.addEventListener('lostpointercapture', cancelDrag, { once: true });
-}
-
-function handleDragMove(event) {
-  if (!dragState || event.pointerId !== dragState.pointerId) {
-    return;
-  }
-
-  const distance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
-  if (!dragState.isDragging && distance < 6) {
-    return;
-  }
-
-  if (!dragState.isDragging) {
-    dragState.isDragging = true;
-    dragState.row.classList.add('is-dragging');
-    document.body.classList.add('is-task-dragging');
-    createDropPreview(dragState.previewHeight);
-  }
-
-  const previewRect = getCurrentPreviewRect();
-  const target = getStableDropTarget(getDropTargetWithoutPreview(event), event, previewRect);
-  if (!target) {
-    clearDropPreview();
-    dropPreview = null;
-    return;
-  }
-
-  dropPreview = target;
-  placeDropPreview(target);
-}
-
-function finishDrag(event) {
-  if (!dragState || event.pointerId !== dragState.pointerId) {
-    return;
-  }
-
-  const taskId = dragState.taskId;
-  const target = dropPreview;
-  const shouldMove = dragState.isDragging && target && target.parentId !== taskId && !isDescendantTask(taskId, target.parentId);
-
-  cleanupDrag();
-
-  if (shouldMove) {
-    animateTaskLayout(document.querySelector('.day-window'), () => {
-      moveTaskWithinTree(taskState, taskId, target.parentId, target.index, { showDeletedTasks });
-    });
-  }
-}
-
-function cancelDrag() {
-  if (!dragState) {
-    return;
-  }
-  cleanupDrag();
-}
-
-function cancelDragContextMenu(event) {
-  if (!dragState?.isDragging) {
-    return;
-  }
-  event.preventDefault();
-  cleanupDrag();
-}
-
-function cleanupDrag() {
-  dragState?.row.classList.remove('is-dragging');
-  document.body.classList.remove('is-task-dragging');
-  clearDropPreview();
-  dragState = null;
-  dropPreview = null;
-}
-
-function getDropTarget(event) {
-  const hoveredRow = document.elementFromPoint(event.clientX, event.clientY)?.closest('.task-row');
-  const taskInfo = hoveredRow ? getTaskLocation(taskState, hoveredRow.dataset.taskId) : null;
-
-  if (!hoveredRow || !taskInfo || taskInfo.task.id === dragState.taskId) {
-    return getGapDropTarget(event);
-  }
-
-  if (isDescendantTask(dragState.taskId, taskInfo.task.id)) {
-    return null;
-  }
-
-  const rect = hoveredRow.getBoundingClientRect();
-  const gap = getRowGap(event.clientY, rect);
-  if (!gap) {
-    return null;
-  }
-
-  const asChild = event.clientX >= getChildThresholdX(hoveredRow);
-  const childTarget = asChild && gap === 'after' && canAcceptChildTask(taskInfo.task)
-    ? {
-        parentId: taskInfo.task.id,
-        index: taskInfo.task.children?.length || 0,
-        mode: 'child',
-        anchorRow: hoveredRow,
-      }
-    : null;
-
-  if (childTarget && !isDescendantTask(dragState.taskId, childTarget.parentId)) {
-    return resolveDropTarget(childTarget);
-  }
-
-  const siblingTarget = {
-    parentId: taskInfo.parentId,
-    index: getDropIndexAroundTask(taskInfo.parentId, taskInfo.task.id, gap),
-    mode: gap,
-    anchorRow: hoveredRow,
-  };
-  return resolveDropTarget(siblingTarget);
-}
-
-function getDropTargetWithoutPreview(event) {
-  const preview = document.querySelector('.drop-preview');
-  preview?.remove();
-  return getDropTarget(event);
-}
-
-function getGapDropTarget(event) {
-  const list = document.querySelector('.task-list');
-  if (!list?.contains(document.elementFromPoint(event.clientX, event.clientY))) {
-    return null;
-  }
-
-  const rows = [...document.querySelectorAll('.task-row:not(.is-dragging)')];
-  if (rows.length === 0) {
-    return { parentId: null, index: 0, mode: 'root' };
-  }
-
-  const trailingTarget = getTrailingDropTarget(event, rows);
-  if (trailingTarget) {
-    return trailingTarget;
-  }
-
-  const nearest = rows.reduce((best, row) => {
-    const rect = row.getBoundingClientRect();
-    const topDistance = Math.abs(event.clientY - rect.top);
-    const bottomDistance = Math.abs(event.clientY - rect.bottom);
-    const distance = Math.min(topDistance, bottomDistance);
-    const edge = topDistance <= bottomDistance ? 'before' : 'after';
-    return distance < best.distance ? { row, distance, edge } : best;
-  }, { row: rows[0], distance: Number.POSITIVE_INFINITY }).row;
-
-  const rect = nearest.getBoundingClientRect();
-  const distance = Math.min(Math.abs(event.clientY - rect.top), Math.abs(event.clientY - rect.bottom));
-  const edge = Math.abs(event.clientY - rect.top) <= Math.abs(event.clientY - rect.bottom) ? 'before' : 'after';
-  if (edge === 'after') {
-    const afterTarget = getAfterDropTargetFromRow(event, nearest, rect, { requireLastSibling: distance > 24 });
-    if (afterTarget) {
-      return afterTarget;
-    }
-  }
-
-  if (distance > 24) {
-    return null;
-  }
-
-  const info = getTaskLocation(taskState, nearest.dataset.taskId);
-  const target = {
-    parentId: info.parentId,
-    index: getDropIndexAroundTask(info.parentId, info.task.id, edge),
-    mode: edge,
-    anchorRow: nearest,
-  };
-  return resolveDropTarget(target);
-}
-
-function getTrailingDropTarget(event, rows) {
-  const list = document.querySelector('.task-list');
-  const listRect = list?.getBoundingClientRect();
-  const candidates = rows
-    .map((row) => {
-      const rect = row.getBoundingClientRect();
-      const info = getTaskLocation(taskState, row.dataset.taskId);
-      if (!info || info.task.id === dragState.taskId) {
-        return null;
-      }
-      if (event.clientY < rect.bottom || event.clientY > (listRect?.bottom ?? Number.POSITIVE_INFINITY)) {
-        return null;
-      }
-      if (!isLastVisibleSibling(info.parentId, info.task.id)) {
-        return null;
-      }
-      if (!isPointerInRowLevel(event, row, rect)) {
-        return null;
-      }
-
-      return {
-        row,
-        rect,
-        info,
-        depth: Number(row.dataset.depth || 0),
-        distance: event.clientY - rect.bottom,
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => {
-      if (b.depth !== a.depth) {
-        return b.depth - a.depth;
-      }
-      return a.distance - b.distance;
-    });
-
-  const candidate = candidates[0];
-  if (!candidate) {
-    return null;
-  }
-
-  return getAfterDropTargetFromRow(event, candidate.row, candidate.rect);
-}
-
-function isPointerInRowLevel(event, row, rect) {
-  const list = document.querySelector('.task-list');
-  const listRight = list?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY;
-  const levelLeft = rect.left - getLevelHitSlop(row);
-  return event.clientX >= levelLeft && event.clientX <= listRight;
-}
-
-function getLevelHitSlop(row) {
-  const depth = Number(row.dataset.depth || 0);
-  return depth === 0 ? 4 : 22;
-}
-
-function getAfterDropTargetFromRow(event, row, rect, { requireLastSibling = false } = {}) {
-  if (event.clientY < rect.bottom) {
-    return null;
-  }
-
-  const info = getTaskLocation(taskState, row.dataset.taskId);
-  if (!info || info.task.id === dragState.taskId) {
-    return null;
-  }
-
-  if (requireLastSibling && !isLastVisibleSibling(info.parentId, info.task.id)) {
-    return null;
-  }
-
-  const childTarget = event.clientX >= getChildThresholdX(row) && canAcceptChildTask(info.task)
-    ? {
-        parentId: info.task.id,
-        index: info.task.children?.length || 0,
-        mode: 'child',
-        anchorRow: row,
-      }
-    : null;
-
-  if (childTarget && !isDescendantTask(dragState.taskId, childTarget.parentId)) {
-    return resolveDropTarget(childTarget);
-  }
-
-  return resolveDropTarget({
-    parentId: info.parentId,
-    index: getDropIndexAroundTask(info.parentId, info.task.id, 'after'),
-    mode: 'after',
-    anchorRow: row,
-  });
-}
-
-function isLastVisibleSibling(parentId, taskId) {
-  const siblings = getVisibleSiblings(parentId).filter((task) => task.id !== dragState.taskId);
-  return siblings[siblings.length - 1]?.id === taskId;
-}
-
-function getRowGap(clientY, rect) {
-  const edgeSize = Math.min(12, rect.height * 0.28);
-  if (clientY - rect.top <= edgeSize) {
-    return 'before';
-  }
-  if (rect.bottom - clientY <= edgeSize) {
-    return 'after';
-  }
-  return null;
-}
-
-function getChildThresholdX(row) {
-  const wrapper = row.closest('.task-node');
-  const children = wrapper?.querySelector(':scope > .children');
-  const firstChildRow = children?.querySelector(':scope > .task-node > .task-row');
-
-  if (firstChildRow) {
-    return firstChildRow.querySelector('.drag-handle')?.getBoundingClientRect().left
-      ?? firstChildRow.getBoundingClientRect().left;
-  }
-
-  const depth = Number(row.dataset.depth || 0);
-  return row.getBoundingClientRect().left + (depth >= 3 ? 18 : 26);
-}
-
-function getStableDropTarget(candidate, event, previewRect = getCurrentPreviewRect()) {
-  if (!candidate) {
-    if (dragState.stableTarget && isPointerInsideRect(event, previewRect)) {
-      dragState.emptySince = null;
-      return dragState.stableTarget;
-    }
-    if (dragState.stableTarget) {
-      dragState.emptySince ??= performance.now();
-      if (performance.now() - dragState.emptySince < 80) {
-        return dragState.stableTarget;
-      }
-    }
-    dragState.stableTarget = null;
-    dragState.emptySince = null;
-    return null;
-  }
-
-  dragState.emptySince = null;
-  dragState.stableTarget = candidate;
-  return candidate;
-}
-
-function getCurrentPreviewRect() {
-  const preview = document.querySelector('.drop-preview');
-  return preview?.getBoundingClientRect() || null;
-}
-
-function isPointerInsideRect(event, rect) {
-  if (!rect) {
-    return false;
-  }
-  return (
-    event.clientX >= rect.left
-    && event.clientX <= rect.right
-    && event.clientY >= rect.top
-    && event.clientY <= rect.bottom
-  );
-}
-
-function resolveDropTarget(target) {
-  if (!target || target.parentId === dragState.taskId || isDescendantTask(dragState.taskId, target.parentId)) {
-    return null;
-  }
-
-  const origin = getTaskLocation(taskState, dragState.taskId);
-  if (!origin) {
-    return null;
-  }
-
-  const resolved = normalizeTargetForStatus(target);
-  if (!resolved) {
-    return null;
-  }
-
-  if (isNoopDrop(resolved, origin)) {
-    return null;
-  }
-
-  return resolved;
-}
-
-function normalizeTargetForStatus(target) {
-  const dragged = findTask(taskState, dragState.taskId);
-  const siblings = getVisibleSiblings(target.parentId).filter((task) => task.id !== dragState.taskId);
-  if (!dragged || !siblings) {
-    return null;
-  }
-
-  const statusOrder = taskStatusMeta[dragged.status].order;
-  const intendedIndex = Math.max(0, Math.min(target.index, siblings.length));
-  let minIndex = 0;
-  let maxIndex = siblings.length;
-
-  siblings.forEach((task, index) => {
-    const order = taskStatusMeta[task.status].order;
-    if (order < statusOrder) {
-      minIndex = Math.max(minIndex, index + 1);
-    }
-    if (order > statusOrder) {
-      maxIndex = Math.min(maxIndex, index);
-    }
-  });
-
-  return {
-    ...target,
-    index: Math.max(minIndex, Math.min(intendedIndex, maxIndex)),
-    mode: target.mode === 'child' ? 'child' : 'slot',
-  };
-}
-
-function isNoopDrop(target, origin) {
-  if (origin.parentId !== target.parentId) {
-    return false;
-  }
-
-  const visibleSiblings = getVisibleSiblings(target.parentId);
-  const originVisibleIndex = visibleSiblings.findIndex((task) => task.id === origin.task.id);
-  const withoutDragged = visibleSiblings.filter((task) => task.id !== origin.task.id);
-  const beforeTask = withoutDragged[target.index] || null;
-  const currentBeforeTask = withoutDragged[originVisibleIndex] || null;
-  return beforeTask?.id === currentBeforeTask?.id;
-}
-
-function createDropPreview(height) {
-  clearDropPreview();
-  const preview = el('div', 'drop-preview');
-  document.body.append(preview);
-}
-
-function placeDropPreview(target) {
-  const preview = ensureDropPreview();
-
-  const container = getPreviewContainer(target);
-  const beforeNode = getPreviewBeforeNode(target);
-  container.insertBefore(preview, beforeNode);
-  preview.classList.toggle('as-child', target.mode === 'child');
-  preview.dataset.hint = target.mode === 'child' ? '成为子任务' : '移动到这里';
-}
-
-function clearDropPreview() {
-  document.querySelector('.drop-preview')?.remove();
-}
-
-function ensureDropPreview() {
-  let preview = document.querySelector('.drop-preview');
-  if (!preview) {
-    preview = el('div', 'drop-preview');
-    document.body.append(preview);
-  }
-  preview.style.setProperty('--preview-accent', dragState?.accent || '#8da2b8');
-  return preview;
-}
-
-function getPreviewContainer(target) {
-  if (target.parentId === null) {
-    return document.querySelector('.task-tree');
-  }
-
-  const parentWrapper = getTaskRow(target.parentId)?.closest('.task-node');
-  let children = parentWrapper?.querySelector(':scope > .children');
-  if (!children && parentWrapper) {
-    children = el('div', 'children');
-    parentWrapper.append(children);
-  }
-  return children || document.querySelector('.task-tree');
-}
-
-function getPreviewBeforeNode(target) {
-  const siblings = getVisibleSiblings(target.parentId).filter((task) => task.id !== dragState.taskId);
-  const beforeTask = siblings?.[target.index];
-  if (!beforeTask) {
-    return null;
-  }
-  return getTaskRow(beforeTask.id)?.closest('.task-node') || null;
-}
-
 function getTaskRow(taskId) {
-  return document.querySelector(`.task-row[data-task-id="${taskId}"]`);
-}
-
-function getChildrenByParentId(parentId) {
-  return getTreeChildrenByParentId(taskState, parentId);
-}
-
-function getVisibleSiblings(parentId) {
-  return getTreeVisibleSiblings(taskState, parentId, showDeletedTasks);
-}
-
-function getDropIndexAroundTask(parentId, taskId, edge) {
-  return getTreeDropIndexAroundTask(taskState, parentId, taskId, edge, {
-    draggedTaskId: dragState.taskId,
-    showDeletedTasks,
-  });
-}
-
-function isDescendantTask(taskId, possibleDescendantId) {
-  if (!possibleDescendantId) {
-    return false;
-  }
-  const task = findTask(taskState, taskId);
-  return hasDescendant(task, possibleDescendantId);
+  return [...document.querySelectorAll('.task-row')].find((row) => row.dataset.taskId === taskId);
 }
 
 function canMoveTask(task) {
   return canMoveTaskByState(task, searchQuery);
 }
 
-function getTagColor(tag, fallback = '#8da2b8') {
-  if (typeof tag === 'string') {
-    return tagPalette[tag] || fallback;
+function getPreviewParentTags(items, parentId, inherited = []) {
+  if (parentId === null) return [];
+  for (const task of items) {
+    const tags = [...inherited, ...(task.tags || [])];
+    if (task.id === parentId) return tags;
+    const found = getPreviewParentTags(task.children || [], parentId, tags);
+    if (found) return found;
   }
-  return getSnapshotTagColor(tag, fallback);
+  return null;
+}
+function getTaskAccentColor(task) {
+  return task.color || 'rgb(var(--theme-border-rgb))';
 }

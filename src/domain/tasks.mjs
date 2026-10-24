@@ -39,21 +39,6 @@ export function removeTask(items, taskId) {
   return items.some((task) => removeTask(task.children || [], taskId));
 }
 
-export function detachTask(items, taskId) {
-  const index = items.findIndex((task) => task.id === taskId);
-  if (index !== -1) {
-    return items.splice(index, 1)[0];
-  }
-
-  for (const task of items) {
-    const removed = detachTask(task.children || [], taskId);
-    if (removed) {
-      return removed;
-    }
-  }
-  return null;
-}
-
 export function getTaskLocation(items, taskId, parentId = null) {
   for (let index = 0; index < items.length; index += 1) {
     const task = items[index];
@@ -75,62 +60,18 @@ export function flattenTasks(items) {
 export function normalizeTaskTree(items) {
   return items.map((task) => ({
     ...task,
+    color: typeof task.color === 'string' && task.color.trim() ? task.color : undefined,
     collapsed: Boolean(task.collapsed),
     children: normalizeTaskTree(task.children || []),
   }));
 }
 
 export function sortByStatus(items) {
-  return [...items].sort((a, b) => taskStatusMeta[a.status].order - taskStatusMeta[b.status].order);
+  return [...items].sort((a, b) => taskStatusMeta[a.status].order - taskStatusMeta[b.status].order || Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
 }
 
 export function getRenderableTasks(items, showDeletedTasks) {
   return sortByStatus(items).filter((task) => showDeletedTasks || task.status !== 'deleted');
-}
-
-export function getChildrenByParentId(items, parentId) {
-  if (parentId === null) {
-    return items;
-  }
-
-  const parent = findTask(items, parentId);
-  if (!parent) {
-    return null;
-  }
-  parent.children ||= [];
-  return parent.children;
-}
-
-export function getVisibleSiblings(items, parentId, showDeletedTasks) {
-  return getRenderableTasks(getChildrenByParentId(items, parentId) || [], showDeletedTasks);
-}
-
-export function getDropIndexAroundTask(items, parentId, taskId, edge, { draggedTaskId = null, showDeletedTasks = false } = {}) {
-  const withoutDragged = getVisibleSiblings(items, parentId, showDeletedTasks)
-    .filter((task) => task.id !== draggedTaskId);
-  const targetIndex = withoutDragged.findIndex((task) => task.id === taskId);
-  if (targetIndex === -1) {
-    return withoutDragged.length;
-  }
-  return targetIndex + (edge === 'after' ? 1 : 0);
-}
-
-export function moveTaskWithinTree(items, taskId, nextParentId, nextIndex, { showDeletedTasks = false } = {}) {
-  const removed = detachTask(items, taskId);
-  if (!removed) {
-    return null;
-  }
-
-  const nextParent = nextParentId ? findTask(items, nextParentId) : null;
-  if (nextParent) {
-    nextParent.collapsed = false;
-  }
-  const siblings = getChildrenByParentId(items, nextParentId);
-  const visibleSiblings = getVisibleSiblings(items, nextParentId, showDeletedTasks);
-  const beforeTask = visibleSiblings.filter((task) => task.id !== taskId)[nextIndex] || null;
-  const index = beforeTask ? siblings.findIndex((task) => task.id === beforeTask.id) : siblings.length;
-  siblings.splice(Math.max(0, index), 0, removed);
-  return removed;
 }
 
 export function getVisibleTaskTree(items, { showDeletedTasks, searchQuery }) {

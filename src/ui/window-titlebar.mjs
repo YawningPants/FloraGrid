@@ -1,5 +1,6 @@
 import { el, escapeHtml } from './dom.mjs';
 import { icon } from './icons.mjs';
+import { brandName, brandIconUrl } from '../domain/brand.mjs';
 
 export function createWindowTitleBar({
   title,
@@ -9,11 +10,13 @@ export function createWindowTitleBar({
   onClose = null,
 } = {}) {
   const titleBar = el('header', `window-titlebar${className ? ` ${className}` : ''}`);
+  const windowTitle = title ? `${brandName} · ${title}` : brandName;
+  document.title = windowTitle;
   titleBar.setAttribute('data-tauri-drag-region', '');
   titleBar.innerHTML = `
     <div class="window-name">
-      <span class="window-dot"></span>
-      <span>${escapeHtml(title || '')}</span>
+      <img class="window-brand-icon" src="${brandIconUrl}" alt="" aria-hidden="true" draggable="false" />
+      <span>${escapeHtml(windowTitle)}</span>
     </div>
     <div class="window-controls">
       ${pin ? `<button class="window-control pin" type="button" title="${escapeHtml(pin.label)}" aria-label="${escapeHtml(pin.label)}" aria-pressed="${pin.active}">${icon('pin')}</button>` : ''}

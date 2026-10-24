@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default permissions for the desktop calendar window.",
-  "windows": ["main", "tag-manager"],
+  "windows": ["main", "tag-manager", "month-view", "settings", "day-*"],
   "permissions": [
     "core:window:allow-minimize",
     "core:window:allow-hide",

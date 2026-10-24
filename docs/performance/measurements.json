@@ -1,0 +1,520 @@
+{
+  "conditions": {
+    "cpu": "AMD Ryzen 7 9700X 8-Core Processor",
+    "logicalProcessors": 16,
+    "visibleRamGiB": 31.1,
+    "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5070 (0x00002F04) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1088)",
+    "chrome": "Chrome/155.0.8059.85",
+    "webView2": "155.0.4283.62",
+    "nativeBuild": "debug",
+    "viewport": [
+      1180,
+      820
+    ],
+    "dpr": 2,
+    "samples": 5
+  },
+  "native": {
+    "privateWorkingSetMiB": 102.5,
+    "samples": [
+      {
+        "cpuPercentAllCores": 0,
+        "workingSetMiB": 394,
+        "privateCommitMiB": 213.8
+      },
+      {
+        "cpuPercentAllCores": 0,
+        "workingSetMiB": 394,
+        "privateCommitMiB": 213.8
+      },
+      {
+        "cpuPercentAllCores": 0,
+        "workingSetMiB": 394,
+        "privateCommitMiB": 213.8
+      },
+      {
+        "cpuPercentAllCores": 0,
+        "workingSetMiB": 394,
+        "privateCommitMiB": 213.8
+      },
+      {
+        "cpuPercentAllCores": 0,
+        "workingSetMiB": 393.8,
+        "privateCommitMiB": 213.7
+      }
+    ],
+    "note": "Read-only process-group idle sampling; shared working sets must not be interpreted as exclusive memory; window visibility was not controlled."
+  },
+  "actualFrontend": [
+    {
+      "tasks": 50,
+      "nodes": 1503,
+      "roots": 50,
+      "completionMedianMs": 12.099999994039536,
+      "completionP95Ms": 14.399999976158142,
+      "samples": [
+        11,
+        12.099999994039536,
+        12.099999994039536,
+        14.399999976158142,
+        10.800000011920929
+      ],
+      "jsHeapMiB": 1.0492897033691406
+    },
+    {
+      "tasks": 300,
+      "nodes": 9353,
+      "roots": 200,
+      "completionMedianMs": 78.10000002384186,
+      "completionP95Ms": 96,
+      "samples": [
+        53.60000002384186,
+        96,
+        78.10000002384186,
+        93.5,
+        66.19999998807907
+      ],
+      "jsHeapMiB": 1.6518745422363281
+    },
+    {
+      "tasks": 750,
+      "nodes": 23378,
+      "roots": 500,
+      "completionMedianMs": 291.5,
+      "completionP95Ms": 344.5,
+      "samples": [
+        155.7000000178814,
+        286.59999999403954,
+        321.30000001192093,
+        291.5,
+        344.5
+      ],
+      "jsHeapMiB": 2.585094451904297
+    }
+  ],
+  "renderers": [
+    {
+      "method": "svg-expanded",
+      "count": 100,
+      "buildMs": 2,
+      "nodes": 800,
+      "canvasBackingMiB": 0,
+      "buildMedianMs": 2.2999999821186066,
+      "buildP95Ms": 2.4000000059604645,
+      "samples": [
+        2.0999999940395355,
+        2.300000011920929,
+        2.2999999821186066,
+        2.4000000059604645,
+        2
+      ],
+      "jsHeapMiB": 1.1001739501953125,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 978,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "svg-use",
+      "count": 100,
+      "buildMs": 2.100000023841858,
+      "nodes": 110,
+      "canvasBackingMiB": 0,
+      "buildMedianMs": 2.0999999940395355,
+      "buildP95Ms": 2.2000000178813934,
+      "samples": [
+        1.800000011920929,
+        2.0999999940395355,
+        2.2000000178813934,
+        2,
+        2.100000023841858
+      ],
+      "jsHeapMiB": 1.1082305908203125,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 1188,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "img-shared",
+      "count": 100,
+      "buildMs": 1.0999999940395355,
+      "nodes": 100,
+      "canvasBackingMiB": 0,
+      "buildMedianMs": 1.100000023841858,
+      "buildP95Ms": 1.100000023841858,
+      "samples": [
+        1.100000023841858,
+        1.100000023841858,
+        1.100000023841858,
+        1.0999999940395355,
+        1.0999999940395355
+      ],
+      "jsHeapMiB": 1.1317672729492188,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 279,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "canvas-vector",
+      "count": 100,
+      "buildMs": 0.9000000059604645,
+      "nodes": 1,
+      "canvasBackingMiB": 4.17,
+      "buildMedianMs": 0.8999999761581421,
+      "buildP95Ms": 1.0999999940395355,
+      "samples": [
+        0.800000011920929,
+        0.8999999761581421,
+        0.699999988079071,
+        1.0999999940395355,
+        0.9000000059604645
+      ],
+      "jsHeapMiB": 1.1386642456054688,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 180,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "canvas-sprite",
+      "count": 100,
+      "buildMs": 0.800000011920929,
+      "nodes": 1,
+      "canvasBackingMiB": 4.17,
+      "buildMedianMs": 0.4000000059604645,
+      "buildP95Ms": 0.800000011920929,
+      "samples": [
+        0.4000000059604645,
+        0.30000001192092896,
+        0.699999988079071,
+        0.29999998211860657,
+        0.800000011920929
+      ],
+      "jsHeapMiB": 1.138885498046875,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 180,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "svg-expanded",
+      "count": 1000,
+      "buildMs": 20.099999994039536,
+      "nodes": 8000,
+      "canvasBackingMiB": 0,
+      "buildMedianMs": 20.700000017881393,
+      "buildP95Ms": 27.5,
+      "samples": [
+        27.5,
+        20.700000017881393,
+        20.200000017881393,
+        20.799999982118607,
+        20.099999994039536
+      ],
+      "jsHeapMiB": 1.1800537109375,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 8179,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "svg-use",
+      "count": 1000,
+      "buildMs": 20.399999976158142,
+      "nodes": 1010,
+      "canvasBackingMiB": 0,
+      "buildMedianMs": 21.099999994039536,
+      "buildP95Ms": 28.80000001192093,
+      "samples": [
+        28.80000001192093,
+        21.19999998807907,
+        21.099999994039536,
+        20.69999998807907,
+        20.399999976158142
+      ],
+      "jsHeapMiB": 1.1800537109375,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 10189,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "img-shared",
+      "count": 1000,
+      "buildMs": 9.299999982118607,
+      "nodes": 1000,
+      "canvasBackingMiB": 0,
+      "buildMedianMs": 9.400000005960464,
+      "buildP95Ms": 10.5,
+      "samples": [
+        9.099999994039536,
+        10.5,
+        9.599999994039536,
+        9.400000005960464,
+        9.299999982118607
+      ],
+      "jsHeapMiB": 1.1800537109375,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 1179,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "canvas-vector",
+      "count": 1000,
+      "buildMs": 4.9000000059604645,
+      "nodes": 1,
+      "canvasBackingMiB": 4.17,
+      "buildMedianMs": 4.700000017881393,
+      "buildP95Ms": 4.9000000059604645,
+      "samples": [
+        4.700000017881393,
+        4.5,
+        4.9000000059604645,
+        4.699999988079071,
+        4.9000000059604645
+      ],
+      "jsHeapMiB": 1.1839714050292969,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 180,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "canvas-sprite",
+      "count": 1000,
+      "buildMs": 0.7999999821186066,
+      "nodes": 1,
+      "canvasBackingMiB": 4.17,
+      "buildMedianMs": 0.800000011920929,
+      "buildP95Ms": 1.4000000059604645,
+      "samples": [
+        1,
+        0.800000011920929,
+        0.7000000178813934,
+        1.4000000059604645,
+        0.7999999821186066
+      ],
+      "jsHeapMiB": 1.1841506958007812,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 180,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "svg-expanded",
+      "count": 5000,
+      "buildMs": 135.69999998807907,
+      "nodes": 40000,
+      "canvasBackingMiB": 0,
+      "buildMedianMs": 135.69999998807907,
+      "buildP95Ms": 159.30000001192093,
+      "samples": [
+        137.69999998807907,
+        115.59999999403954,
+        133.69999998807907,
+        159.30000001192093,
+        135.69999998807907
+      ],
+      "jsHeapMiB": 1.3673171997070312,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 40179,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "svg-use",
+      "count": 5000,
+      "buildMs": 104.59999999403954,
+      "nodes": 5010,
+      "canvasBackingMiB": 0,
+      "buildMedianMs": 129.30000001192093,
+      "buildP95Ms": 189.09999999403954,
+      "samples": [
+        137.69999998807907,
+        123,
+        129.30000001192093,
+        189.09999999403954,
+        104.59999999403954
+      ],
+      "jsHeapMiB": 1.367431640625,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 50189,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "img-shared",
+      "count": 5000,
+      "buildMs": 50.79999998211861,
+      "nodes": 5000,
+      "canvasBackingMiB": 0,
+      "buildMedianMs": 50.79999998211861,
+      "buildP95Ms": 56,
+      "samples": [
+        56,
+        48.599999994039536,
+        49.20000001788139,
+        51.19999998807907,
+        50.79999998211861
+      ],
+      "jsHeapMiB": 1.367431640625,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 5179,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "canvas-vector",
+      "count": 5000,
+      "buildMs": 35.80000001192093,
+      "nodes": 1,
+      "canvasBackingMiB": 4.17,
+      "buildMedianMs": 29,
+      "buildP95Ms": 35.80000001192093,
+      "samples": [
+        27.099999994039536,
+        29,
+        29,
+        30.5,
+        35.80000001192093
+      ],
+      "jsHeapMiB": 1.3675460815429688,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 180,
+        "jsEventListeners": 41
+      }
+    },
+    {
+      "method": "canvas-sprite",
+      "count": 5000,
+      "buildMs": 6.299999982118607,
+      "nodes": 1,
+      "canvasBackingMiB": 4.17,
+      "buildMedianMs": 6.299999982118607,
+      "buildP95Ms": 8.899999976158142,
+      "samples": [
+        8.899999976158142,
+        6.299999982118607,
+        6.699999988079071,
+        6.0999999940395355,
+        6.299999982118607
+      ],
+      "jsHeapMiB": 1.3675003051757812,
+      "domCounters": {
+        "documents": 2,
+        "nodes": 180,
+        "jsEventListeners": 41
+      }
+    }
+  ],
+  "legacyPreview": [
+    {
+      "requested": 100,
+      "nodes": 2080,
+      "flowerMarks": 101,
+      "svg": 163,
+      "clickMedianMs": 7.899999976158142,
+      "clickP95Ms": 8.200000017881393,
+      "samples": [
+        8.200000017881393,
+        7.899999976158142,
+        7.9000000059604645,
+        7.5999999940395355,
+        7.800000011920929
+      ],
+      "jsHeapMiB": 1.5439796447753906
+    },
+    {
+      "requested": 1000,
+      "nodes": 13569,
+      "flowerMarks": 1001,
+      "svg": 1116,
+      "clickMedianMs": 48,
+      "clickP95Ms": 55.39999997615814,
+      "samples": [
+        51.19999998807907,
+        45.20000001788139,
+        48,
+        55.39999997615814,
+        46.400000005960464
+      ],
+      "jsHeapMiB": 1.7546653747558594
+    },
+    {
+      "requested": 5000,
+      "nodes": 66769,
+      "flowerMarks": 5001,
+      "svg": 5516,
+      "clickMedianMs": 213.7000000178814,
+      "clickP95Ms": 238.59999999403954,
+      "samples": [
+        210.5,
+        212.10000002384186,
+        213.7000000178814,
+        238.59999999403954,
+        221.80000001192093
+      ],
+      "jsHeapMiB": 1.8455276489257812
+    }
+  ],
+  "localSvgBloom": [
+    {
+      "concurrent": 1,
+      "p50Ms": 16.69999999999891,
+      "p95Ms": 16.799999999999272,
+      "over25ms": 0,
+      "frames": 38
+    },
+    {
+      "concurrent": 3,
+      "p50Ms": 16.69999999999891,
+      "p95Ms": 16.80000000000109,
+      "over25ms": 0,
+      "frames": 38
+    },
+    {
+      "concurrent": 12,
+      "p50Ms": 16.69999999999891,
+      "p95Ms": 16.80000000000109,
+      "over25ms": 0,
+      "frames": 38
+    }
+  ],
+  "newPrototype": {
+    "sampleTotal": 5000,
+    "yearFieldNodes": 50,
+    "yearPaintedPixelRatio": 0.040653725205612,
+    "yearBuildSamplesMs": [
+      2.100000023841858,
+      1.5999999940395355,
+      1.5999999940395355,
+      1.300000011920929,
+      1.2999999821186066
+    ],
+    "description": "Prototype annual overview aggregates records to at most 24 flower clusters per populated month; month view draws individual records"
+  },
+  "limitations": [
+    "Frontend stress tests ran in isolated headless Chrome, not native release WebView2.",
+    "Build time is main-thread synchronous submission/layout, not end-to-end GPU time.",
+    "JS heap excludes native DOM/image/GPU allocations.",
+    "Only five warm samples per build case; p95 equals the largest of these samples.",
+    "Legacy rows contain a +/-1 record change from the test click."
+  ]
+}

@@ -7,19 +7,26 @@
     "Segoe UI",
     sans-serif;
   background: transparent;
-  color: #f1f7fb;
-  --panel: rgba(31, 48, 58, 0.7);
-  --panel-strong: rgba(37, 57, 68, 0.84);
-  --line: rgba(220, 238, 241, 0.16);
-  --muted: #aac0ca;
-  --text: #f1f7fb;
-  --shadow: 0 24px 80px rgba(18, 35, 44, 0.28);
-  --theme-base-rgb: 30, 48, 58;
-  --theme-glow-rgb: 111, 174, 177;
-  --theme-warm-rgb: 238, 190, 132;
-  --theme-opacity: 0.58;
-  --theme-top-opacity: 0.62;
-  --theme-bottom-opacity: 0.64;
+  --theme-base-rgb: 34, 52, 58;
+  --theme-surface-rgb: 46, 69, 72;
+  --theme-glow-rgb: 131, 184, 179;
+  --theme-warm-rgb: 206, 183, 141;
+  --theme-text-rgb: 237, 243, 239;
+  --theme-border-rgb: 169, 200, 194;
+  --theme-success-rgb: 161, 204, 173;
+  --theme-danger-rgb: 221, 160, 151;
+  --theme-shadow-rgb: 17, 31, 36;
+  --theme-opacity: 0.84;
+  --theme-top-opacity: 0.88;
+  --theme-bottom-opacity: 0.9;
+  --panel: rgba(var(--theme-surface-rgb), 0.72);
+  --panel-strong: rgba(var(--theme-surface-rgb), 0.9);
+  --line: rgba(var(--theme-border-rgb), 0.16);
+  --muted: rgba(var(--theme-text-rgb), 0.7);
+  --text-subtle: rgba(var(--theme-text-rgb), 0.68);
+  --text: rgb(var(--theme-text-rgb));
+  --shadow: 0 24px 80px rgba(var(--theme-shadow-rgb), 0.28);
+  color: var(--text);
 }
 
 * {

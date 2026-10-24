@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "桌面日历",
+  "productName": "日枝",
   "version": "1.0.0",
   "identifier": "com.example.desktop-calendar",
   "build": {
@@ -15,7 +15,7 @@
     },
     "windows": [
       {
-        "title": "桌面日历",
+        "title": "日枝 · 日视图",
         "width": 390,
         "height": 900,
         "minWidth": 320,
@@ -31,6 +31,6 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": ["icons/icon.ico"]
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]
   }
 }

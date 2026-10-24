@@ -1,7 +1,7 @@
 [package]
 name = "desktop-calendar"
 version = "1.0.0"
-description = "A lightweight desktop calendar migrated from Electron to Tauri."
+description = "日枝 FloraGrid：本地桌面日程、树状任务与公农历提醒。"
 authors = ["you"]
 edition = "2021"
 

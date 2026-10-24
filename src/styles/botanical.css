@@ -1,0 +1,132 @@
+/* Appearance-specific details. Minimal mode continues to use the original styles and palettes. */
+.completion-flower,
+.botanical-sprout,
+.botanical-empty { display: none; }
+.completion-check { display: inline; }
+
+html[data-appearance="botanical"] .completion-check,
+html[data-appearance="botanical"] .minimal-empty { display: none; }
+html[data-appearance="botanical"] .completion-flower { display: block; }
+.completion-flower { width: 22px; height: 22px; overflow: visible; flex: 0 0 auto; stroke: none; }
+.flower-petal { fill: var(--flower-petal); }
+.flower-center { fill: var(--flower-center); }
+html[data-appearance="botanical"] .status-button.completed {
+  border-color: transparent;
+  background: transparent;
+}
+html[data-appearance="botanical"] .status-button.completed .completion-flower { margin: -4px; }
+html[data-appearance="botanical"] .status-button.completed:hover { background: rgba(var(--theme-success-rgb), .08); }
+html[data-appearance="botanical"] .month-task-status .completion-flower { width: 14px; height: 14px; }
+html[data-appearance="botanical"] .month-task-status { display: inline-flex; align-items: center; }
+
+/* A single 420 ms bloom in its original slot, followed by the existing status ordering. */
+html[data-appearance="botanical"][data-completion-motion="true"] .is-blooming .flower-petal {
+  animation: petal-unfold 420ms cubic-bezier(.2,.75,.25,1) both;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+html[data-appearance="botanical"][data-completion-motion="true"] .is-blooming .flower-center {
+  animation: flower-center-open 420ms ease-out both;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+@keyframes petal-unfold {
+  0% { transform: scale(.14, .32); opacity: .15; }
+  55% { transform: scale(1.06, 1.03); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes flower-center-open {
+  0%, 32% { transform: scale(.2); opacity: 0; }
+  72% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+html[data-appearance="botanical"] .task-row { border-radius: 8px; }
+html[data-appearance="botanical"] .task-row.is-completed {
+  border-color: rgba(var(--theme-success-rgb), .26);
+  background: linear-gradient(90deg, rgba(var(--theme-success-rgb), .13), transparent 78%), rgba(var(--theme-surface-rgb), .62);
+}
+html[data-appearance="botanical"] .task-row.is-failed {
+  border-color: rgba(var(--theme-danger-rgb), .27);
+  background: linear-gradient(90deg, rgba(var(--theme-danger-rgb), .13), transparent 78%), rgba(var(--theme-surface-rgb), .62);
+}
+html[data-appearance="botanical"] .children::before,
+html[data-appearance="botanical"] .tree-branch::before { background: rgba(var(--branch-rgb), .32); }
+html[data-appearance="botanical"] .tree-branch::after {
+  top: 11px; height: 9px; left: 7px;
+  border: solid rgba(var(--branch-rgb), .38); border-width: 0 0 1px 1px;
+  border-bottom-left-radius: 7px; background: transparent;
+}
+html[data-appearance="botanical"] .tree-leaf-node {
+  top: 17px; left: 5px; width: 6px; height: 4px;
+  border: 0; border-radius: 6px 0 6px 0;
+  background: rgba(var(--branch-rgb), .66); transform: rotate(-27deg);
+}
+html[data-appearance="botanical"] .is-completed-branch > .tree-branch .tree-leaf-node {
+  background: rgb(var(--theme-success-rgb));
+}
+html[data-appearance="botanical"][data-completion-motion="true"] .is-branch-blooming > .tree-branch .tree-leaf-node {
+  animation: branch-leaf-open 420ms ease-out both;
+}
+@keyframes branch-leaf-open {
+  from { transform: rotate(-45deg) scale(.5); opacity: .3; }
+  to { transform: rotate(-27deg) scale(1); opacity: 1; }
+}
+html[data-appearance="botanical"] .daily-notes h2,
+html[data-appearance="botanical"] .month-pane-heading h2 { display: flex; align-items: center; gap: 6px; }
+html[data-appearance="botanical"] .botanical-sprout { display: block; color: rgb(var(--branch-rgb)); flex: 0 0 auto; stroke: none; }
+.botanical-sprout .sprout-stem { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.botanical-sprout .sprout-leaf { fill: currentColor; opacity: .75; }
+.botanical-sprout .sprout-ground { stroke: currentColor; stroke-width: 1; stroke-linecap: round; opacity: .3; }
+.note-sprout { width: 20px; height: 20px; margin: -3px 0; opacity: .85; }
+.long-task-bud { width: 24px; height: 24px; margin: -4px 0; opacity: .8; }
+html[data-appearance="botanical"] .daily-notes { border-top-color: rgba(var(--branch-rgb), .26); }
+html[data-appearance="botanical"] .botanical-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 32px 12px; color: rgba(var(--theme-text-rgb), .76); text-align: center;
+}
+.botanical-empty .botanical-sprout { width: 48px; height: 48px; margin-bottom: 12px; opacity: .8; }
+.botanical-empty p { margin: 0 0 7px; font-size: 13px; }
+.botanical-empty > span { font-size: 11px; line-height: 1.7; color: rgba(var(--theme-text-rgb), .48); }
+html[data-appearance="botanical"] .long-task-empty:has(.botanical-empty) { padding: 0; }
+/* Pasting preserves the task's content and status; only its arrival gets a short leaf accent. */
+html[data-appearance="botanical"] .is-new-shoot::after {
+  content: ''; position: absolute; width: 7px; height: 11px; right: 12px; top: 9px;
+  border-radius: 9px 0 9px 0; background: rgb(var(--branch-rgb)); pointer-events: none;
+  animation: new-shoot 650ms ease-out both;
+}
+@keyframes new-shoot {
+  0% { transform: translateY(5px) rotate(-15deg) scale(.35); opacity: 0; }
+  28%, 65% { transform: translateY(0) rotate(12deg) scale(1); opacity: .85; }
+  100% { transform: translateY(-4px) rotate(20deg) scale(.85); opacity: 0; }
+}
+
+/* Settings controls are shared by both appearances. */
+.appearance-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.appearance-option {
+  display: flex; flex-direction: column; gap: 5px; padding: 12px;
+  border: 1px solid rgba(var(--theme-border-rgb), .16); border-radius: 9px;
+  background: rgba(var(--theme-surface-rgb), .35); color: var(--text); text-align: left; cursor: pointer;
+}
+.appearance-option strong { font-size: 13px; font-weight: 550; }
+.appearance-option span { font-size: 11px; line-height: 1.5; color: rgba(var(--theme-text-rgb), .6); }
+.appearance-option[aria-pressed="true"] { border-color: rgba(var(--theme-glow-rgb), .6); background: rgba(var(--theme-glow-rgb), .1); }
+.appearance-option:hover { border-color: rgba(var(--theme-glow-rgb), .6); }
+.appearance-option:focus { outline: none; }
+.appearance-option:focus-visible { outline: 2px solid rgba(var(--theme-glow-rgb), .6); outline-offset: -3px; }
+.settings-page [data-settings-pane="theme"] .theme-preset-grid { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+.settings-page [data-settings-pane="theme"] { scrollbar-width: thin; scrollbar-color: rgba(var(--theme-border-rgb), .25) transparent; }
+.settings-page [data-settings-pane="theme"]::-webkit-scrollbar { width: 5px; }
+.settings-page [data-settings-pane="theme"]::-webkit-scrollbar-thumb { background: rgba(var(--theme-border-rgb), .25); border-radius: 8px; }
+.settings-page [data-settings-pane="theme"]::-webkit-scrollbar-track { background: transparent; }
+.settings-page [data-settings-pane="theme"]::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+@supports selector(::-webkit-scrollbar) {
+  .settings-page [data-settings-pane="theme"] { scrollbar-width: auto; scrollbar-color: auto; }
+}
+.completion-motion-control { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; font-size: 12px; }
+.completion-motion-control small { grid-column: 1 / -1; color: rgba(var(--theme-text-rgb), .5); font-size: 11px; line-height: 1.5; }
+.completion-motion-input { accent-color: rgb(var(--theme-glow-rgb)); }
+@media (prefers-reduced-motion: reduce) {
+  .is-blooming .flower-petal, .is-blooming .flower-center,
+  .is-branch-blooming .tree-leaf-node, .is-new-shoot::after { animation: none !important; }
+}
