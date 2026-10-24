@@ -97,12 +97,21 @@ try {
   assert.equal(await read("Math.abs(window.__wrapper.getBoundingClientRect().top-window.__oldTop)<1"), true);
   await read("(async()=>{const {flushDaySave}=await import('/src/storage/day-storage.mjs');await flushDaySave()})()");
   assert.equal(await read("JSON.parse(localStorage.getItem('desktop-calendar:day:2026-10-24')).tasks[0].status"), 'completed');
+  const flowerA = await read("JSON.parse(localStorage.getItem('desktop-calendar:day:2026-10-24')).tasks[0].flower");
+  assert.ok(flowerA.variant && flowerA.tone);
   await wait("!document.querySelector('.is-blooming')"); await sleep(240);
   assert.equal(await read("document.querySelector('.task-tree > .task-node > .task-row').dataset.taskId"), 'b');
   assert.equal(await read("document.querySelector('.status-summary').textContent.includes('已完成 2')"), true);
   check('parent guard; immediate save/count; flower stays in place; only changed row updates before smooth status ordering');
   await click(button('child')); await click(button('parent'));
-  await wait("!document.querySelector('.is-blooming')"); await sleep(240);
+  await wait("!document.querySelector('.is-blooming')");
+  const foldStart = await read("document.querySelector('[data-task-id=\"parent\"]').closest('.task-node').querySelector(':scope > .children').getBoundingClientRect().height");
+  assert.ok(foldStart > 0, 'automatic collapse starts from expanded height');
+  await sleep(75);
+  const foldMiddle = await read("document.querySelector('[data-task-id=\"parent\"]').closest('.task-node').querySelector(':scope > .children').getBoundingClientRect().height");
+  assert.ok(foldMiddle > 0 && foldMiddle < foldStart, 'height interpolates during automatic collapse');
+  await wait("!document.querySelector('.children.is-animating')"); await sleep(240);
+  assert.equal(await read("document.querySelector('[data-task-id=\"parent\"]').closest('.task-node').querySelector(':scope > .children').getBoundingClientRect().height"), 0);
   assert.equal(await read("document.querySelector('[data-task-id=\"parent\"]').closest('.task-node').classList.contains('is-completed-branch')"), true);
   assert.equal(await read("document.querySelector('[data-task-id=\"parent\"]').closest('.task-node').querySelector(':scope > .children').classList.contains('is-collapsed')"), true);
   await click(button('b')); await click(button('b')); await sleep(720);
@@ -112,6 +121,11 @@ try {
   await reload("document.querySelector('[data-task-id=\"a\"]')");
   assert.equal(await read("document.querySelectorAll('.is-blooming').length"), 0);
   assert.equal(await read("getComputedStyle(document.querySelector('[data-task-id=\"a\"] .completion-flower')).display"), 'block');
+  assert.deepEqual(await read("(()=>{const f=document.querySelector('[data-task-id=\"a\"] .completion-flower');return {variant:f.dataset.flowerVariant,tone:f.dataset.flowerTone}})()"), flowerA);
+  const oldFlower = await read("(()=>{const f=document.querySelector('[data-task-id=\"done\"] .completion-flower');return {variant:f.dataset.flowerVariant,tone:f.dataset.flowerTone}})()");
+  await click(button('done')); await click(button('done'));
+  assert.deepEqual(await read("(()=>{const f=document.querySelector('[data-task-id=\"done\"] .completion-flower');return {variant:f.dataset.flowerVariant,tone:f.dataset.flowerTone}})()"), oldFlower);
+  await wait("!document.querySelector('.is-blooming')"); await sleep(240);
   await screenshot('day');
   check('whole-branch completion collapses; rapid undo stays active; loading completed tasks never replays bloom');
   await setTheme({ presetId: 'morning', opacity: .84, appearance: 'minimal' });
@@ -136,6 +150,33 @@ try {
   assert.equal(await read("document.querySelectorAll('.task-row').length"), 0);
   assert.equal(await read("getComputedStyle(document.querySelector('.botanical-empty')).display"), 'flex');
   check('minimal retains original palette/check; motion toggle and system reduced motion; navigating during bloom cannot leak old cards');
+  // Expanded, colored and tagged branches plus all six flower shapes for visual QA.
+  const variants = ['wild','daisy','cosmos','plum','star','camellia'];
+  const tones = ['cream','rose','blue','lilac','apricot','sage'];
+  const project = task('visual-parent', '给周末留一点生长的空间', 'active', [
+    { ...task('visual-a', '读完一小节，记下喜欢的句子'), color: '#9cbfd0', tags: [{ id: 'reading', text: '阅读', color: '#9cbfd0' }] },
+    { ...task('visual-b', '整理窗边的绿植', 'active', [task('visual-deep', '修剪枝叶与换水')]), color: '#c8bb94' },
+    { ...task('visual-c', '散步时拍到一束光', 'completed'), color: '#d2a9b7', flower: { variant: 'cosmos', tone: 'rose' } },
+  ]);
+  project.tags = [{ id: 'life', text: '生活', color: '#a8be9e' }];
+  const gallery = task('visual-gallery', '一点点进展，都开成花', 'completed', variants.map((variant, i) => ({ ...task(`visual-flower-${i}`, ['一杯热茶','读完一页','浇一盆花','收好灵感','留一点空白','写下今天'][i], 'completed'), flower: { variant, tone: tones[i] } })));
+  await read(`localStorage.setItem('desktop-calendar:day:2026-10-25',JSON.stringify(${JSON.stringify({ date:'2026-10-25', note:'记录那些很小，却让一天变好的事。', tasks:[project,gallery] })}))`);
+  await reload("document.querySelector('[data-task-id=\"visual-parent\"]')");
+  await setTheme({ presetId:'morning', opacity:.9, appearance:'botanical', completionMotion:true });
+  await command('Emulation.setDeviceMetricsOverride', { width:390, height:1000, deviceScaleFactor:2, mobile:false });
+  await wait("document.querySelector('.task-plant-branches .plant-fork')");
+  assert.equal(await read("getComputedStyle(document.querySelector('[data-task-id=\"visual-a\"]')).borderTopWidth"), '0px');
+  assert.equal(await read("document.querySelectorAll('[data-task-id=\"visual-a\"] .tag-chip').length"), 2);
+  assert.equal(await read("document.querySelectorAll('.task-plant-branches .plant-fork').length>=6"), true);
+  assert.equal(await read("new Set([...document.querySelectorAll('[data-task-id^=\"visual-flower-\"] .completion-flower')].map(f=>f.dataset.flowerVariant)).size"), 6);
+  await screenshot('branches-day');
+  await command('Emulation.setDeviceMetricsOverride', { width:320, height:780, deviceScaleFactor:2, mobile:false });
+  await read('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
+  assert.equal(await read('document.documentElement.scrollWidth<=innerWidth'), true);
+  await setTheme({ presetId:'morning', opacity:.9, appearance:'minimal' });
+  assert.equal(await read("getComputedStyle(document.querySelector('[data-task-id=\"visual-a\"]')).borderTopWidth"), '1px');
+  await setTheme({ presetId:'sage', opacity:.84, appearance:'botanical', completionMotion:true });
+  check('six stable flower variants; shared curved branches; borderless child leaves preserve custom colors and inherited tags; narrow and minimal layouts');
   await command('Page.navigate', { url: `${origin}/src/index.html#settings?tab=theme` });
   await wait("document.querySelector('.appearance-option')");
   await command('Emulation.setDeviceMetricsOverride', { width: 780, height: 560, deviceScaleFactor: 2, mobile: false });
@@ -157,8 +198,20 @@ try {
   assert.equal(await read("document.querySelector('.completion-motion-input').checked"), false);
   check('settings switches both palette families; all five new themes fit; preferences persist');
   await command('Page.navigate', { url: `${origin}/src/index.html?view=month&date=2026-10-24` });
+  await command('Emulation.setDeviceMetricsOverride', { width:1180, height:820, deviceScaleFactor:2, mobile:false });
   await wait("document.querySelector('.month-task-chip.is-completed')");
+  assert.deepEqual(await read("(()=>{const f=document.querySelector('.month-task-chip[data-task-id=\"a\"] .completion-flower');return {variant:f.dataset.flowerVariant,tone:f.dataset.flowerTone}})()"), flowerA);
   assert.equal(await read("getComputedStyle(document.querySelector('.month-task-chip.is-completed .completion-flower')).display"), 'block');
+  await wait("document.querySelector('.month-plant-branches .plant-week-branch')");
+  assert.equal(await read("document.querySelectorAll('.month-plant-branches .plant-week-branch').length"), 5);
+  assert.equal(await read("getComputedStyle(document.querySelector('.month-task-chip')).borderTopWidth"), '0px');
+  const dates = [3,6,8,11,13,16,18,20,21,27,29,30];
+  const labels = ['读一小节','整理灵感','散步半小时','记下今天','留一杯热茶','给绿植浇水'];
+  const colors = ['#a8be9e','#9cbfd0','#d2a9b7','#d2bf98','#b6aed0','#c8c2a3'];
+  await read(`(()=>{const dates=${JSON.stringify(dates)},labels=${JSON.stringify(labels)},colors=${JSON.stringify(colors)},variants=${JSON.stringify(variants)},tones=${JSON.stringify(tones)};dates.forEach((day,i)=>{const date='2026-10-'+String(day).padStart(2,'0');localStorage.setItem('desktop-calendar:day:'+date,JSON.stringify({date,note:'',tasks:Array.from({length:i%4+1},(_,j)=>({id:'calendar-leaf-'+i+'-'+j,title:labels[(i+j)%6],status:j%3===0?'completed':'active',color:colors[(i+j)%6],flower:{variant:variants[(i+j)%6],tone:tones[(i+j)%6]},tags:[],children:[]}))}))})})()`);
+  await reload("document.querySelector('.month-task-chip[data-task-id=\"calendar-leaf-0-0\"]')");
+  await wait("Number(document.querySelector('.month-plant-branches')?.dataset.branchDays)>10");
+  await screenshot('branches-month');
   await click('.month-long-toggle');
   assert.equal(await read("getComputedStyle(document.querySelector('.long-task-empty .botanical-empty')).display"), 'flex');
   await screenshot('month');

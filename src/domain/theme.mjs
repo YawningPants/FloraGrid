@@ -105,6 +105,10 @@ export function applyThemeSettings(settings) {
   root.dataset.completionMotion = String(normalized.completionMotion);
   root.style.setProperty('--flower-petal', preset.petal || preset.success);
   root.style.setProperty('--flower-center', preset.center || preset.warm);
+  const flowerColors = { cream: '#e7dfba', rose: '#d9b1bb', blue: '#b2cbd5', lilac: '#c7badb', apricot: '#e3c2a1', sage: '#bacb9e' };
+  Object.entries(flowerColors).forEach(([tone, color]) => {
+    root.style.setProperty(`--flower-${tone}`, `color-mix(in srgb, ${color} 76%, ${preset.petal || preset.success} 24%)`);
+  });
   root.style.setProperty('--branch-rgb', hexToRgbTriplet(preset.stem || preset.border));
   root.style.setProperty('--theme-base-rgb', hexToRgbTriplet(preset.color));
   root.style.setProperty('--theme-surface-rgb', hexToRgbTriplet(preset.surface));

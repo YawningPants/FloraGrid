@@ -44,6 +44,7 @@ import { loadTagTemplates } from '../storage/tag-template-storage.mjs';
 import { el, escapeHtml, truncateText } from '../ui/dom.mjs';
 import { icon } from '../ui/icons.mjs';
 import { completionMarkup, createBotanicalEmpty, sproutMarkup } from '../ui/botanical.mjs';
+import { queueMonthPlant } from '../ui/plant-layout.mjs';
 import { createWindowTitleBar } from '../ui/window-titlebar.mjs';
 import { openSettingsWindow as openSharedSettingsWindow } from '../ui/settings-window.mjs';
 import { createTaskDragController } from '../ui/task-drag-controller.mjs';
@@ -98,7 +99,10 @@ export function createMonthView(options = {}) {
   currentMonthKey = options.month || currentMonthKey;
   const root = el('section', 'month-window');
   monthTaskResizeObserver?.disconnect();
-  monthTaskResizeObserver = new ResizeObserver(entries => entries.forEach(({ target }) => fitMonthTaskList(target)));
+  monthTaskResizeObserver = new ResizeObserver(entries => {
+    entries.forEach(({ target }) => { if (target.matches('.month-task-list')) fitMonthTaskList(target); });
+    queueMonthPlant(root.querySelector('.month-grid'));
+  });
   monthSearch = createMonthSearch({
     onClose: () => { searchMode = false; renderMonthView(root); },
     onLocate: async date => {
@@ -994,6 +998,8 @@ function createCalendarGrid(root) {
   }
 
   calendar.append(weekdays, grid);
+  monthTaskResizeObserver?.observe(grid);
+  queueMonthPlant(grid);
   return calendar;
 }
 
@@ -1168,7 +1174,7 @@ function createTaskList(dateKey) {
 function fitMonthTaskList(list) {
   if (!list.isConnected || list.clientHeight <= 0) return;
   const styles = getComputedStyle(list);
-  const height = list.clientHeight;
+  const height = list.clientHeight - (parseFloat(styles.paddingTop) || 0) - (parseFloat(styles.paddingBottom) || 0);
   const gap = parseFloat(styles.rowGap) || 0;
   const chipHeight = parseFloat(styles.getPropertyValue('--month-task-height')) || 18;
   const moreHeight = parseFloat(styles.getPropertyValue('--month-more-height')) || 14;
@@ -1192,11 +1198,14 @@ function createTaskChip(task, dateKey) {
   chip.dataset.taskId = task.id;
   chip.dataset.date = dateKey;
   chip.style.setProperty('--task-color', getTaskChipColor(task));
+  if (task.status === 'active') {
+    const leaf = el('span', 'month-task-leaf'); leaf.setAttribute('aria-hidden', 'true'); chip.append(leaf);
+  }
   if (task.reminder) chip.insertAdjacentHTML('beforeend', icon(task.kind === 'birthday' ? 'cake' : task.kind === 'anniversary' ? 'heart' : 'bell'));
   if (taskStatusMeta[task.status].symbol) {
     const status = el('span', 'month-task-status');
     status.setAttribute('aria-label', taskStatusMeta[task.status].label);
-    if (task.status === 'completed') status.innerHTML = completionMarkup();
+    if (task.status === 'completed') status.innerHTML = completionMarkup(task);
     else status.textContent = taskStatusMeta[task.status].symbol;
     chip.append(status);
   }

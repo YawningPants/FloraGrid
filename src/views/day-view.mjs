@@ -1,5 +1,6 @@
 import { tagPalette } from '../data/sample-calendar.mjs';
 import { getDayDisplayMeta, getTodayDateKey, shiftDateKey } from '../domain/date.mjs';
+import { ensureTaskFlower, getTaskFlower } from '../domain/flowers.mjs';
 import {
   cloneTemplateAsSnapshot,
   createTagSnapshot,
@@ -101,6 +102,8 @@ let dayRefreshPending = false;
 const pendingCompletions = new Map();
 const completionMoves = new Set();
 let completionSettleTimer = 0;
+let completionSettleGeneration = 0;
+const childrenAnimations = new Map();
 const TAG_GROUP_VISIBLE_CHARS = 5;
 const TAG_GROUP_MIN_WIDTH = 34;
 const TAG_GROUP_MAX_WIDTH = 90;
@@ -464,7 +467,7 @@ function createStatusButton(task) {
   const button = el('button', `status-button ${task.status}`);
   button.type = 'button';
   button.setAttribute('aria-label', taskStatusMeta[task.status].label);
-  if (task.status === 'completed') button.innerHTML = completionMarkup();
+  if (task.status === 'completed') button.innerHTML = completionMarkup(task);
   else button.textContent = taskStatusMeta[task.status].symbol;
   if (task.status === 'active' || task.status === 'completed') {
     button.title = task.status === 'active' ? '标记完成' : '改为进行中';
@@ -1846,47 +1849,65 @@ function toggleTaskCollapse(taskId) {
   persistCurrentDaySoon();
 }
 
-function animateChildrenCollapse(row, wrapper, children, collapsed) {
+function cancelChildrenAnimation(children) {
+  const pending = childrenAnimations.get(children);
+  if (!pending) return;
+  cancelAnimationFrame(pending.frame); clearTimeout(pending.timer);
+  children.removeEventListener('transitionend', pending.onEnd);
+  childrenAnimations.delete(children); pending.resolve(false);
+}
+
+function animateChildrenCollapse(row, wrapper, children, collapsed, { animate = true } = {}) {
   const root = document.querySelector('.day-window');
+  const currentHeight = children.getBoundingClientRect().height;
+  cancelChildrenAnimation(children);
+  row.classList.toggle('is-collapsed', collapsed);
+  wrapper.classList.toggle('is-collapsed', collapsed);
   const toggle = row.querySelector('.collapse-toggle');
-  const currentHeight = children.classList.contains('is-collapsed') ? 0 : children.scrollHeight;
+  toggle?.setAttribute('aria-expanded', String(!collapsed));
+  const task = findTask(taskState, row.dataset.taskId);
+  if (toggle) {
+    toggle.title = `${collapsed ? '展开' : '折叠'} ${task?.children?.length || 0} 个子任务`;
+    toggle.setAttribute('aria-label', toggle.title);
+  }
+  if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    children.classList.toggle('is-collapsed', collapsed);
+    children.classList.remove('is-animating');
+    children.style.removeProperty('--children-height'); children.style.removeProperty('transition');
+    applyTreeBranchLayout(root);
+    return Promise.resolve(true);
+  }
+  // Freeze the current height before changing the collapsed class. This also
+  // lets a quick reverse start from the actual interpolated height.
+  children.style.transition = 'none';
   children.classList.add('is-animating');
   children.style.setProperty('--children-height', `${currentHeight}px`);
   children.getBoundingClientRect();
-
-  row.classList.toggle('is-collapsed', collapsed);
-  wrapper.classList.toggle('is-collapsed', collapsed);
-  toggle?.setAttribute('aria-expanded', String(!collapsed));
-
-  if (collapsed) {
-    children.classList.add('is-collapsed');
-    window.requestAnimationFrame(() => {
-      children.style.setProperty('--children-height', '0px');
-      applyTreeBranchLayout(root);
-    });
-    finishChildrenAnimation(root, [children]);
-    return;
-  }
-
-  children.classList.remove('is-collapsed');
-  children.style.setProperty('--children-height', '0px');
-  children.getBoundingClientRect();
-  const targetHeight = children.scrollHeight;
-  window.requestAnimationFrame(() => {
+  children.style.removeProperty('transition');
+  children.classList.toggle('is-collapsed', collapsed);
+  const last = children.querySelector(':scope > .task-node:last-child');
+  const targetHeight = collapsed ? 0 : last ? last.offsetTop + last.offsetHeight : 0;
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  const pending = { promise, resolve, frame: 0, timer: 0, onEnd: null };
+  const finish = () => {
+    if (childrenAnimations.get(children) !== pending) return;
+    clearTimeout(pending.timer);
+    children.removeEventListener('transitionend', pending.onEnd);
+    childrenAnimations.delete(children);
+    children.classList.remove('is-animating'); children.style.removeProperty('--children-height');
+    if (children.isConnected) applyTreeBranchLayout(root);
+    resolve(true);
+  };
+  pending.onEnd = event => { if (event.target === children && event.propertyName === 'height') finish(); };
+  children.addEventListener('transitionend', pending.onEnd);
+  childrenAnimations.set(children, pending);
+  pending.frame = requestAnimationFrame(() => {
     children.style.setProperty('--children-height', `${targetHeight}px`);
     applyTreeBranchLayout(root);
+    pending.timer = window.setTimeout(finish, 310);
   });
-  finishChildrenAnimation(root, [children]);
-}
-
-function finishChildrenAnimation(root, animatedChildren) {
-  window.setTimeout(() => {
-    animatedChildren.forEach((children) => {
-      children.classList.remove('is-animating');
-      children.style.removeProperty('--children-height');
-    });
-    applyTreeBranchLayout(root);
-  }, 300);
+  return promise;
 }
 
 function finishTaskEditing(task) {
@@ -1929,11 +1950,14 @@ function toggleTaskCompletion(taskId) {
 
   const root = document.querySelector('.day-window');
   if (document.body.classList.contains('is-task-dragging')) return;
+  completionSettleGeneration += 1;
   closeTaskContextMenu();
   closeTaskColorPalette();
   closeTagPopover();
   renderTagPopoverOnly(root);
+  if (task.status === 'completed') task.flower = getTaskFlower(task);
   task.status = task.status === 'active' ? 'completed' : 'active';
+  if (task.status === 'completed') ensureTaskFlower(task);
   if (task.status === 'completed' && task.children?.length) task.collapsed = true;
   // Save immediately. Animation never delays persistence or changes task semantics.
   persistCurrentDaySoon();
@@ -1969,33 +1993,53 @@ function cancelCompletionMoves() {
 }
 
 function clearCompletionFeedback() {
+  completionSettleGeneration += 1;
   clearTimeout(completionSettleTimer);
   completionSettleTimer = 0;
   pendingCompletions.clear();
   cancelCompletionMoves();
+  [...childrenAnimations.keys()].forEach(cancelChildrenAnimation);
 }
 
 function settleCompletionFeedback(root, animate = true) {
   clearTimeout(completionSettleTimer);
   completionSettleTimer = 0;
   if (!root || !pendingCompletions.size) return;
+  const generation = ++completionSettleGeneration;
+  const pending = new Map(pendingCompletions);
+  const folds = [];
+  pending.forEach((node, id) => {
+    const task = findTask(taskState, id);
+    if (!task || !node.isConnected) return;
+    const row = node.querySelector(':scope > .task-row');
+    const children = node.querySelector(':scope > .children');
+    row?.classList.remove('is-blooming'); node.classList.remove('is-branch-blooming');
+    if (children) {
+      const collapsed = Boolean(task.collapsed);
+      if (!animate || children.classList.contains('is-collapsed') !== collapsed) {
+        folds.push(animateChildrenCollapse(row, node, children, collapsed, { animate }));
+      } else if (childrenAnimations.has(children)) folds.push(childrenAnimations.get(children).promise);
+    }
+  });
+  const finish = () => {
+    if (generation !== completionSettleGeneration || !root.isConnected) return;
+    finishCompletionReorder(root, pending, animate);
+  };
+  // Manual expansion and reduced-motion paths must settle synchronously.
+  if (animate && !matchMedia('(prefers-reduced-motion: reduce)').matches && folds.length) Promise.all(folds).then(finish);
+  else finish();
+}
+
+function finishCompletionReorder(root, pending, animate) {
   cancelCompletionMoves();
-  const changedNodes = new Set([...pendingCompletions.values()].filter(node => node.isConnected));
+  const changedNodes = new Set([...pending.values()].filter(node => node.isConnected));
   const containers = new Set([...changedNodes].map(node => node.parentElement));
   const nodes = [...new Set([...containers].flatMap(container => [...container.children].filter(node => node.matches('.task-node'))))];
   const before = new Map(nodes.map(node => [node, node.getBoundingClientRect()]));
-  pendingCompletions.forEach((node, id) => {
-    const task = findTask(taskState, id);
-    if (!task || !node.isConnected) return;
-    const collapsed = Boolean(task.children?.length && task.collapsed);
-    node.classList.toggle('is-collapsed', collapsed);
-    node.querySelector(':scope > .task-row')?.classList.toggle('is-collapsed', collapsed);
-    node.querySelector(':scope > .children')?.classList.toggle('is-collapsed', collapsed);
-    node.querySelector(':scope > .task-row')?.classList.remove('is-blooming');
+  pending.forEach((node, id) => {
     node.querySelector(':scope > .task-row')?.style.removeProperty('min-height');
-    node.classList.remove('is-branch-blooming');
+    if (pendingCompletions.get(id) === node) pendingCompletions.delete(id);
   });
-  pendingCompletions.clear();
   containers.forEach(container => {
     const parentId = container.matches('.children') ? container.parentElement.querySelector(':scope > .task-row')?.dataset.taskId : null;
     const items = parentId ? findTask(taskState, parentId)?.children || [] : taskState;

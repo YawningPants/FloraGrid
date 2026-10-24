@@ -8,7 +8,14 @@ html[data-appearance="botanical"] .completion-check,
 html[data-appearance="botanical"] .minimal-empty { display: none; }
 html[data-appearance="botanical"] .completion-flower { display: block; }
 .completion-flower { width: 22px; height: 22px; overflow: visible; flex: 0 0 auto; stroke: none; }
-.flower-petal { fill: var(--flower-petal); }
+.flower-petal { fill: var(--flower-tone, var(--flower-petal)); }
+.flower-inner-petal { fill: color-mix(in srgb, var(--flower-tone, var(--flower-petal)) 62%, var(--flower-center) 38%); }
+.completion-flower[data-flower-tone="cream"] { --flower-tone: var(--flower-cream); }
+.completion-flower[data-flower-tone="rose"] { --flower-tone: var(--flower-rose); }
+.completion-flower[data-flower-tone="blue"] { --flower-tone: var(--flower-blue); }
+.completion-flower[data-flower-tone="lilac"] { --flower-tone: var(--flower-lilac); }
+.completion-flower[data-flower-tone="apricot"] { --flower-tone: var(--flower-apricot); }
+.completion-flower[data-flower-tone="sage"] { --flower-tone: var(--flower-sage); }
 .flower-center { fill: var(--flower-center); }
 html[data-appearance="botanical"] .status-button.completed {
   border-color: transparent;
@@ -129,4 +136,138 @@ html[data-appearance="botanical"] .is-new-shoot::after {
 @media (prefers-reduced-motion: reduce) {
   .is-blooming .flower-petal, .is-blooming .flower-center,
   .is-branch-blooming .tree-leaf-node, .is-new-shoot::after { animation: none !important; }
+}
+
+/* A task family shares one quiet surface. Child tasks are leaves, not nested cards. */
+html[data-appearance="botanical"] .task-tree { gap: 9px; }
+html[data-appearance="botanical"] .task-node { grid-template-columns: 26px minmax(0, 1fr); column-gap: 0; }
+html[data-appearance="botanical"] .task-tree > .task-node {
+  grid-template-columns: 0 minmax(0, 1fr);
+  border: 1px solid rgba(var(--branch-rgb), .18);
+  border-radius: 7px 21px 7px 21px;
+  background: rgba(var(--theme-surface-rgb), .35);
+}
+html[data-appearance="botanical"] .task-tree > .task-node:has(> .task-row.is-completed) {
+  border-color: rgba(var(--theme-success-rgb), .22);
+  background: rgba(var(--theme-success-rgb), .055);
+}
+html[data-appearance="botanical"] .task-tree > .task-node:has(> .task-row.is-failed) {
+  border-color: rgba(var(--theme-danger-rgb), .22);
+  background: rgba(var(--theme-danger-rgb), .045);
+}
+html[data-appearance="botanical"] .task-tree > .task-node:has(> .task-row.is-deleted) {
+  border-color: rgba(var(--theme-border-rgb), .1); background: rgba(var(--theme-surface-rgb), .2);
+}
+html[data-appearance="botanical"] .task-tree > .task-node > .task-row {
+  border: 0; border-radius: 7px 20px 7px 20px; background: transparent;
+}
+html[data-appearance="botanical"] .task-row.has-custom-color { box-shadow: none; }
+html[data-appearance="botanical"] .children {
+  --children-expanded-margin-top: 0px;
+  gap: 2px; margin-top: 0;
+}
+html[data-appearance="botanical"] .children .task-row {
+  min-height: 39px; padding: 8px 8px 9px;
+  border: 0; border-radius: 3px 17px 3px 17px;
+  box-shadow: none; background: transparent;
+}
+html[data-appearance="botanical"] .children .task-row:hover,
+html[data-appearance="botanical"] .children .task-row:focus-within {
+  background: rgba(var(--branch-rgb), .075);
+}
+html[data-appearance="botanical"] .task-row > .task-body > .task-title { line-height: 1.42; }
+html[data-appearance="botanical"] .children .task-title {
+  color: rgba(var(--theme-text-rgb), .84); font-size: 12.5px; font-weight: 400;
+}
+html[data-appearance="botanical"] .task-row.is-completed .task-title {
+  color: color-mix(in srgb, rgb(var(--theme-success-rgb)) 35%, rgb(var(--theme-text-rgb)) 65%);
+}
+html[data-appearance="botanical"] .task-row.is-failed .task-title {
+  color: color-mix(in srgb, rgb(var(--theme-danger-rgb)) 65%, rgb(var(--theme-text-rgb)) 35%);
+}
+html[data-appearance="botanical"] .task-row.is-deleted .task-title { color: rgba(var(--theme-text-rgb), .5); }
+html[data-appearance="botanical"] .task-row.has-custom-color:not(.is-deleted) > .task-body > .task-title {
+  color: color-mix(in srgb, var(--accent) 80%, rgb(var(--theme-text-rgb)) 20%);
+}
+html[data-appearance="botanical"] .task-row.has-children:not(.is-collapsed)::after {
+  content: ''; position: absolute; top: 28px; bottom: -2px;
+  width: 6px; left: 26px; border-left: 1px solid rgba(var(--branch-rgb), .44);
+  border-radius: 50% 0 0 50%; pointer-events: none;
+}
+html[data-appearance="botanical"] .children::before,
+html[data-appearance="botanical"] .tree-branch::before,
+html[data-appearance="botanical"] .tree-branch::after,
+html[data-appearance="botanical"] .tree-leaf-node { display: none; }
+.task-plant-branches, .month-plant-branches { display: none; }
+html[data-appearance="botanical"] .task-plant-branches,
+html[data-appearance="botanical"] .month-plant-branches {
+  display: block; position: absolute; top: 0; left: 0; z-index: 0;
+  width: 100%; fill: none; stroke: rgb(var(--branch-rgb)); stroke-width: 1;
+  stroke-linecap: round; stroke-linejoin: round; pointer-events: none;
+  overflow: visible;
+}
+.task-plant-branches .plant-trunk { opacity: .45; }
+.task-plant-branches .plant-fork { opacity: .57; }
+html[data-appearance="botanical"] .children > .task-node { z-index: 1; }
+html[data-appearance="botanical"] .status-button.active {
+  width: 16px; height: 12px; margin-top: 3px;
+  border-radius: 13px 2px 13px 2px; transform: rotate(-18deg);
+  border-color: rgba(var(--branch-rgb), .66); background: rgba(var(--branch-rgb), .08);
+}
+html[data-appearance="botanical"] .task-row.has-custom-color > .status-button.active {
+  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+html[data-appearance="botanical"] .task-color-button.has-custom-color { opacity: 0; }
+html[data-appearance="botanical"] .task-row:hover .task-color-button,
+html[data-appearance="botanical"] .task-row:focus-within .task-color-button,
+html[data-appearance="botanical"] .task-color-button[aria-expanded="true"] { opacity: 1; }
+html[data-appearance="botanical"] .status-button.completed { position: relative; isolation: isolate; }
+html[data-appearance="botanical"] .status-button.completed::before {
+  content: ''; position: absolute; bottom: -3px; left: 2px; z-index: -1;
+  width: 8px; height: 4px; border-radius: 8px 0 8px 0;
+  background: rgba(var(--branch-rgb), .7); transform: rotate(18deg); pointer-events: none;
+}
+.status-button:focus-visible { outline: 1px solid rgba(var(--theme-glow-rgb), .7); outline-offset: 3px; }
+
+/* A month grows along weekly branches; dates remain aligned and fully clickable. */
+.month-task-leaf { display: none; }
+html[data-appearance="botanical"] .month-grid { position: relative; padding-left: 8px; }
+html[data-appearance="botanical"] .month-day-cell {
+  position: relative; z-index: 1;
+  padding: 5px 7px; gap: 3px;
+  border-color: transparent; border-radius: 7px 16px 7px 16px;
+  background: transparent; box-shadow: none; transform: none;
+}
+html[data-appearance="botanical"] .month-day-cell:hover { background: rgba(var(--branch-rgb), .06); }
+html[data-appearance="botanical"] .month-day-cell.is-today { background: rgba(var(--theme-glow-rgb), .075); }
+html[data-appearance="botanical"] .month-day-cell.is-outside { background: transparent; opacity: .42; }
+html[data-appearance="botanical"] .month-day-number { height: 18px; line-height: 18px; align-self: start; }
+html[data-appearance="botanical"] .month-day-cell.is-today .month-day-number { height: 18px; }
+html[data-appearance="botanical"] .month-task-list {
+  --month-task-height: 16px; --month-more-height: 12px;
+  padding: 3px 0 0 12px; gap: 2px;
+}
+html[data-appearance="botanical"] .month-task-chip {
+  padding: 0 1px; gap: 3px; border: 0; border-radius: 2px 9px 2px 9px;
+  background: transparent; box-shadow: none; color: rgba(var(--theme-text-rgb), .9);
+}
+html[data-appearance="botanical"] .month-task-chip:hover { background: rgba(var(--branch-rgb), .08); }
+html[data-appearance="botanical"] .month-task-chip.is-completed { color: rgba(var(--theme-text-rgb), .74); }
+html[data-appearance="botanical"] .month-task-chip.is-failed {
+  color: color-mix(in srgb, rgb(var(--theme-danger-rgb)) 70%, rgb(var(--theme-text-rgb)) 30%);
+}
+html[data-appearance="botanical"] .month-task-chip.has-custom-color {
+  color: color-mix(in srgb, var(--task-color) 80%, rgb(var(--theme-text-rgb)) 20%);
+}
+html[data-appearance="botanical"] .month-task-chip.is-failed .month-task-status { color: rgb(var(--theme-danger-rgb)); }
+html[data-appearance="botanical"] .month-task-leaf {
+  display: block; flex: 0 0 6px; width: 6px; height: 9px; margin-left: 2px;
+  border-radius: 7px 1px 7px 1px; background: currentColor; opacity: .6; transform: rotate(-24deg);
+}
+.month-plant-branches .plant-trunk { stroke-width: 1.3; opacity: .5; }
+.month-plant-branches .plant-week-branch { stroke-width: 1.1; opacity: .4; }
+.month-plant-branches .plant-day-fork, .month-plant-branches .plant-task-fork { opacity: .55; }
+@media (prefers-reduced-motion: reduce) {
+  .children, .children > .task-node { transition: none !important; }
 }

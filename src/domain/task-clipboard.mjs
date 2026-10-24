@@ -45,6 +45,7 @@ export function createPastedTaskFromClipboard() {
 function cloneTaskWithNewIds(task) {
   const copy = structuredClone(task);
   delete copy.reminder;
+  delete copy.flower;
   return {
     ...copy,
     id: `task-${crypto.randomUUID()}`,

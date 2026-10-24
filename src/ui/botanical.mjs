@@ -1,16 +1,28 @@
 import { el } from './dom.mjs';
+import { getTaskFlower } from '../domain/flowers.mjs';
 
 // Small vector marks; no images, background loops, or additional WebViews.
-export function flowerMarkup() {
-  const petal = 'M0-1.6C-2.7-2.7-5-6.6-2.8-9.2C-.5-11.5 3.8-10.2 3.5-7.5C3.2-4.9 1.8-2.6 0-1.6Z';
-  return `<svg class="completion-flower" viewBox="-12 -12 24 24" aria-hidden="true" focusable="false">
-    <g class="flower-petals">${Array.from({ length: 5 }, (_, i) => `<g transform="rotate(${i * 72})"><path class="flower-petal" d="${petal}"/></g>`).join('')}</g>
-    <circle class="flower-center" r="2.2"/>
+const petals = {
+  wild: [5, 'M0-1.6C-2.7-2.7-5-6.6-2.8-9.2C-.5-11.5 3.8-10.2 3.5-7.5C3.2-4.9 1.8-2.6 0-1.6Z'],
+  daisy: [8, 'M0-2C-1.9-4-2.3-8-1.3-10.2C-.6-11.5 1-11.6 1.7-10.2C2.5-8 1.8-4 0-2Z'],
+  cosmos: [6, 'M0-1.7C-1.7-3-4.1-6.4-3.1-8C-2.5-9.3-1.2-9.7-.3-8.7C.8-9.7 2.4-9.3 2.9-8C3.7-6 1.7-3 0-1.7Z'],
+  plum: [5, 'M0-1C-2.8-2.1-5-5.7-3.1-8.1C-1.2-10.4 2.6-10.3 4-7.8C5.3-5.2 2.7-2.2 0-1Z'],
+  star: [6, 'M0-1.5C-2.1-3-3-5.7-2.2-7.8L0-11L2.2-7.8C3-5.7 2.1-3 0-1.5Z'],
+  camellia: [6, 'M0-.8C-3-1.5-5.2-5.1-3.7-8C-2.2-10.8 2.5-11 4.1-8.1C5.8-5.2 3-1.6 0-.8Z'],
+};
+
+export function flowerMarkup(task) {
+  const { variant, tone } = getTaskFlower(task);
+  const [count, petal] = petals[variant];
+  const ring = (n, size = 1, offset = 0, inner = false) => Array.from({ length: n }, (_, i) => `<g transform="rotate(${i * 360 / n + offset}) scale(${size})"><path class="flower-petal${inner ? ' flower-inner-petal' : ''}" d="${petal}"/></g>`).join('');
+  return `<svg class="completion-flower" data-flower-variant="${variant}" data-flower-tone="${tone}" viewBox="-12 -12 24 24" aria-hidden="true" focusable="false">
+    <g class="flower-petals">${ring(count)}${variant === 'camellia' ? ring(5, .58, 30, true) : ''}</g>
+    <circle class="flower-center" r="${variant === 'daisy' ? 2.7 : variant === 'camellia' ? 1.8 : 2.1}"/>
   </svg>`;
 }
 
-export function completionMarkup(appearance = document.documentElement.dataset.appearance) {
-  return appearance === 'minimal' ? '<span class="completion-check" aria-hidden="true">✓</span>' : flowerMarkup();
+export function completionMarkup(task, appearance = document.documentElement.dataset.appearance) {
+  return appearance === 'minimal' ? '<span class="completion-check" aria-hidden="true">✓</span>' : flowerMarkup(task);
 }
 
 export function sproutMarkup(className = '') {
