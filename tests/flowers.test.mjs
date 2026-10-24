@@ -4,11 +4,11 @@ import { ensureTaskFlower, flowerTones, flowerVariants, getTaskFlower, isTaskFlo
 import { normalizeTaskTree } from '../src/domain/tasks.mjs';
 import { copyTask, createPastedTaskFromClipboard } from '../src/domain/task-clipboard.mjs';
 
-test('random assignment covers six flower shapes and tones, and survives undo and serialization', () => {
+test('random assignment covers the full flower pool and tones, and survives undo and serialization', () => {
   const shapes = new Set(), tones = new Set();
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < flowerVariants.length; i++) {
     const task = { id: `flower-${i}`, status: 'active', children: [] };
-    const values = [(i + .1) / 6, (5 - i + .1) / 6];
+    const values = [(i + .1) / flowerVariants.length, (i % flowerTones.length + .1) / flowerTones.length];
     const flower = ensureTaskFlower(task, () => values.shift());
     shapes.add(flower.variant); tones.add(flower.tone);
     task.status = 'completed'; task.status = 'active';
@@ -32,7 +32,7 @@ test('invalid persisted flower metadata is ignored and repaired on completion', 
   const task = { id: 'invalid', flower: { variant: '<svg>', tone: 'unknown' } };
   assert.equal(isTaskFlower(task.flower), false);
   assert.equal(isTaskFlower(getTaskFlower(task)), true);
-  assert.deepEqual(ensureTaskFlower(task, () => .99), { variant: 'camellia', tone: 'sage' });
+  assert.deepEqual(ensureTaskFlower(task, () => .99), { variant: 'aster', tone: 'sage' });
 });
 
 test('copying a tree preserves task content and statuses while giving new tasks fresh flowers', () => {

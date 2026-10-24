@@ -117,7 +117,7 @@ try {
   assert.deepEqual(await saved(), beforeDown);
   assert.equal(await evaluate("[...document.querySelectorAll('.task-tree .task-row')].some(e=>e.getAnimations().some(a=>a.playState==='running'))"), true);
   assert.equal(await evaluate("document.querySelector('.drop-preview') === null && Boolean(document.querySelector('.task-drag-projection'))"), true);
-  assert.equal(await evaluate("document.querySelector('.task-drag-float')===null && document.querySelector('.task-drag-indicator').getBoundingClientRect().width<90"), true);
+  assert.equal(await evaluate("document.querySelector('.task-drag-float')===null && document.querySelector('.task-drag-title').textContent==='A' && !document.querySelector('.is-drag-parent')"), true);
   await mkdir(join(root, 'src-tauri/target'), { recursive: true });
   const screenshot = await command('Page.captureScreenshot', { format: 'png' });
   await writeFile(join(root, 'src-tauri/target/drag-ui-preview.png'), Buffer.from(screenshot.data, 'base64'));
@@ -185,13 +185,13 @@ try {
   const collapsedStart = await start('A');
   const collapsedParent = await rect('P');
   await moveTo(collapsedStart.hx + 30, collapsedParent.bottom - 3);
-  assert.equal(await evaluate("document.querySelector('.task-drag-projection .tag-chip').textContent.includes('Inherited')"), true);
+  assert.equal(await evaluate("document.querySelector('.task-drag-projection .tag-chip')===null"), true);
   assert.equal(await evaluate("document.querySelector('.task-drag-projection').parentElement.classList.contains('is-collapsed')"), false);
   await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await mouse('mouseReleased', collapsedStart.hx + 30, collapsedParent.bottom - 3, 0);
   assert.equal(await evaluate("[...document.querySelectorAll('.task-row')].find(e=>e.dataset.taskId==='P').classList.contains('is-collapsed')"), true);
   assert.equal((await saved()).find(x => x.id === 'P').collapsed, true);
-  check('collapsed parent preview shows inherited tags and cancellation restores folding');
+  check('collapsed parent preview keeps child tags hidden and cancellation restores folding');
 
   await seed();
   const outdent = await start('X');

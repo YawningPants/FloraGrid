@@ -176,9 +176,10 @@ try {
   await setTheme({ presetId:'morning', opacity:.9, appearance:'botanical', completionMotion:true });
   await command('Emulation.setDeviceMetricsOverride', { width:390, height:1000, deviceScaleFactor:2, mobile:false });
   await wait("document.querySelector('.task-plant-branches .plant-fork')");
-  assert.equal(await read("Boolean(document.querySelector('[data-task-id=\"visual-parent\"] .task-root-symbol'))&&!document.querySelector('[data-task-id=\"visual-a\"] .task-root-symbol')"), true);
+  assert.equal(await read("getComputedStyle(document.querySelector('[data-task-id=\"visual-parent\"] .status-button')).borderRadius==='50%'&&!document.querySelector('.task-root-symbol')"), true);
   assert.equal(await read("getComputedStyle(document.querySelector('[data-task-id=\"visual-a\"]')).borderTopWidth"), '0px');
-  assert.equal(await read("document.querySelectorAll('[data-task-id=\"visual-a\"] .tag-chip').length"), 2);
+  assert.equal(await read("document.querySelectorAll('[data-task-id=\"visual-a\"] .tag-chip,[data-task-id=\"visual-a\"] .tag-add-button').length"), 0);
+  assert.equal(await read("document.querySelectorAll('[data-task-id=\"visual-parent\"] .tag-chip').length"), 1);
   assert.equal(await read("document.querySelectorAll('.task-plant-branches .plant-fork').length>=6"), true);
   assert.equal(await read("new Set([...document.querySelectorAll('[data-task-id^=\"visual-flower-\"] .completion-flower')].map(f=>f.dataset.flowerVariant)).size"), 6);
   // Animated screen rectangles must not contaminate branch geometry.
@@ -203,7 +204,7 @@ try {
   await pointerClick('[data-task-id="visual-parent"] .status-button');
   assert.equal(await read("document.querySelector('.task-notice').textContent.includes('请先处理所有进行中的子任务')"), true);
   await pointerClick('.window-control.pin'); await wait("document.querySelector('.pin[aria-pressed=\"true\"]')");
-  assert.equal(await read("getComputedStyle(document.querySelector('.pin-state')).display!=='none'&&document.querySelector('.pin-state').textContent==='已置顶'"), true);
+  assert.equal(await read("(()=>{const pin=document.querySelector('.pin'),close=document.querySelector('.close');return getComputedStyle(pin).borderRadius==='50%'&&pin.getBoundingClientRect().width===close.getBoundingClientRect().width&&getComputedStyle(pin).backgroundColor!==getComputedStyle(close).backgroundColor})()"), true);
   await screenshot('pinned-day');
   await pointerClick('.window-control.pin'); await wait("document.querySelector('.pin[aria-pressed=\"false\"]')");
   assert.equal(await read("getComputedStyle(document.querySelector('.pin-state')).display"), 'none');
@@ -222,10 +223,33 @@ try {
   await read("(()=>{const i=document.querySelector('.task-title-input');i.value='新增的一片叶';i.dispatchEvent(new Event('input',{bubbles:true}));i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}))})()");
   await wait(`document.querySelector('[data-task-id="visual-parent"]').closest('.task-node').querySelector(':scope > .task-plant-branches')?.querySelectorAll('.plant-fork').length===${forksBefore+1}`);
   assert.equal(await read("getComputedStyle(document.querySelector('[data-task-id=\"visual-parent\"]'),'::after').content"), 'none');
+  await read("(async()=>{const {flushDaySave}=await import('/src/storage/day-storage.mjs');await flushDaySave()})()");
+  const dense = task('dense-root', '展开与折叠稳定性', 'active', [
+    task('dense-fold', '二十片叶子的分枝', 'active', Array.from({length:20},(_,i)=>task(`dense-leaf-${i}`,`分枝叶片 ${i+1}`))),
+    ...Array.from({length:10},(_,i)=>task(`following-${i}`,`后续任务 ${i+1}`)),
+  ]);
+  await read(`localStorage.setItem('desktop-calendar:day:2026-10-26',JSON.stringify(${JSON.stringify({date:'2026-10-26',note:'',tasks:[dense]})}))`);
+  await command('Page.navigate', {url:`${origin}/src/index.html?view=day&date=2026-10-26`});
+  await wait("document.querySelector('[data-task-id=\"dense-fold\"] > .collapse-toggle')");
+  const sampleFold = async () => read(`new Promise(done=>{const samples=[];function sample(){const row=document.querySelector('[data-task-id="dense-root"]'),svg=row.closest('.task-node').querySelector(':scope > .task-plant-branches'),path=[...svg.querySelectorAll('.plant-fork')].find(p=>p.dataset.branchKey==='fork:following-9'),button=document.querySelector('[data-task-id="following-9"] .status-button'),r=button.getBoundingClientRect(),end=path.getPointAtLength(path.getTotalLength()),m=svg.getScreenCTM();samples.push({scale:m.a,error:Math.abs(end.y*m.d+m.f-(r.top+r.height*.65)),ey:end.y,fy:m.f,by:r.top,folding:document.querySelector(".day-window").classList.contains("is-tree-folding"),h:document.querySelector("[data-task-id=dense-fold]").closest(".task-node").querySelector(":scope > .children").getBoundingClientRect().height,d:path.getAttribute("d"),computed:getComputedStyle(path).d});if(samples.length<18)requestAnimationFrame(sample);else done(samples)}requestAnimationFrame(sample)})`);
+  await pointerClick('[data-task-id="dense-fold"] > .collapse-toggle');
+  const closing = await sampleFold();
+  assert.ok(closing.every(s=>Math.abs(s.scale-1)<.01), 'collapsing must not scale the SVG sideways');
+  assert.ok(closing.every(s=>s.error<4), 'ancestor branches must follow moving sibling tasks');
+  await wait("!document.querySelector('.children.is-animating')");
+  await pointerClick('[data-task-id="dense-fold"] > .collapse-toggle');
+  const opening = await sampleFold();
+  assert.ok(opening.every(s=>Math.abs(s.scale-1)<.01), 'expanding must not scale the SVG sideways');
+  assert.ok(opening.every(s=>s.error<4), 'branches must stay aligned while a large subtree expands: '+JSON.stringify(opening));
+  await wait("!document.querySelector('.children.is-animating')&&!document.querySelector('.is-tree-folding')");
+  await read("(async()=>{const {flushDaySave}=await import('/src/storage/day-storage.mjs');await flushDaySave()})()");
+  await command('Page.navigate', {url:`${origin}/src/index.html?view=day&date=2026-10-25`});
+  await wait("document.querySelector('[data-task-id=\"visual-parent\"]')");
+  check('large nested folds keep 1:1 branch scale and aligned sibling endpoints throughout animation');
   await setTheme({ presetId:'morning', opacity:.9, appearance:'minimal' });
   assert.equal(await read("getComputedStyle(document.querySelector('[data-task-id=\"visual-a\"]')).borderTopWidth"), '1px');
   await setTheme({ presetId:'sage', opacity:.84, appearance:'botanical', completionMotion:true });
-  check('six stable flower variants; shared curved branches; borderless child leaves preserve custom colors and inherited tags; narrow and minimal layouts');
+  check('stable flowers; shared branches; root-only tag presentation preserves stored child data; narrow layouts');
   await command('Page.navigate', { url: `${origin}/src/index.html#settings?tab=theme` });
   await wait("document.querySelector('.appearance-option')");
   await command('Emulation.setDeviceMetricsOverride', { width: 780, height: 560, deviceScaleFactor: 2, mobile: false });
@@ -263,7 +287,7 @@ try {
   assert.equal(await read("document.querySelectorAll('.month-plant-frame .plant-frame-vines path').length>=3&&document.querySelectorAll('.plant-empty-leaves .plant-decor-leaf').length>0&&document.querySelector('.plant-tail-leaves')!==null"), true);
   assert.equal(await read("getComputedStyle(document.querySelector('.month-plant-frame')).pointerEvents"), 'none');
   await pointerClick('.window-control.pin'); await wait("document.querySelector('.pin[aria-pressed=\"true\"]')");
-  assert.equal(await read("getComputedStyle(document.querySelector('.pin-state')).display!=='none'"), true);
+  assert.equal(await read("document.querySelector('.pin').getBoundingClientRect().width===document.querySelector('.close').getBoundingClientRect().width"), true);
   await pointerClick('.window-control.pin');
   await screenshot('branches-month');
   await click('.month-long-toggle');

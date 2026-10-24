@@ -205,6 +205,7 @@ html[data-appearance="botanical"] .month-plant-branches {
 .task-plant-branches .plant-trunk { opacity: .45; }
 .task-plant-branches .plant-fork { opacity: .57; }
 html[data-appearance="botanical"] .children > .task-node { z-index: 1; }
+html[data-appearance="botanical"] .children > .task-node { flex-shrink: 0; }
 html[data-appearance="botanical"] .status-button.active {
   width: 16px; height: 12px; margin-top: 3px;
   border-radius: 13px 2px 13px 2px; transform: rotate(-18deg);
@@ -270,16 +271,15 @@ html[data-appearance="botanical"] .month-task-leaf {
 
 /* Stable branch geometry is painted once across the parent row and its children. */
 html[data-appearance="botanical"] .task-plant-branches {
-  height: 100%; overflow: hidden;
+  height: auto; overflow: hidden;
 }
 html[data-appearance="botanical"] .task-plant-branches path {
   transition: d 180ms cubic-bezier(.2,.8,.2,1);
 }
 html[data-appearance="botanical"] .task-node > .task-row { z-index: 1; }
-.task-root-symbol { width: 20px; height: 20px; fill: none; stroke: rgb(var(--branch-rgb)); stroke-width: 1.5; }
-.task-root-symbol .root-heart { fill: rgb(var(--theme-warm-rgb)); stroke: none; }
 html[data-appearance="botanical"] .status-button.active[data-task-role="root"] {
-  width: 20px; height: 20px; margin-top: 0; border: 0; background: transparent; transform: none;
+  width: 16px; height: 16px; margin-top: 1px; border-radius: 50%;
+  border: 1px solid rgba(var(--branch-rgb), .66); background: rgba(var(--branch-rgb), .06); transform: none;
 }
 html[data-appearance="botanical"] .status-button.completed[data-task-role="root"]::before { display: none; }
 
@@ -288,7 +288,7 @@ html[data-appearance="botanical"] .status-button.completed[data-task-role="root"
 .task-meta-row:empty { display: none; }
 .task-meta-row > .tag-list { position: relative; flex: 1 1 74px; min-width: 0; }
 .task-row-controls {
-  display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end;
+  position: relative; display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end;
   align-items: center; gap: 5px; min-height: 20px; margin-left: auto; min-width: 0;
 }
 html[data-appearance="botanical"] .task-body { padding-right: 0; }
@@ -317,16 +317,28 @@ html[data-appearance="botanical"] .task-body { padding-right: 0; }
 .task-row-controls .deleted-actions { opacity: 1; pointer-events: auto; }
 .task-row .task-row-controls .deleted-actions { opacity: 1; pointer-events: auto; }
 .task-row:hover .task-row-controls .collapse-toggle { opacity: 1; }
+html[data-appearance="botanical"] .task-row.has-children { min-height: 60px; }
+.task-row > .collapse-toggle {
+  position: absolute; left: 5px; bottom: 5px; width: 18px; height: 18px; padding: 0;
+  opacity: .65; pointer-events: auto;
+}
+.task-row > .collapse-toggle::after { display: none; }
+.task-row:hover > .collapse-toggle, .task-row > .collapse-toggle:focus-visible { opacity: 1; }
 .task-drag-origin .task-row-controls, .task-drag-projection .task-row-controls { visibility: hidden; }
+.task-drag-origin > .collapse-toggle, .task-drag-projection .task-row > .collapse-toggle { visibility: hidden; }
 
 /* Only a small movement badge follows the pointer; the real result stays visible. */
 .task-drag-indicator {
   position: fixed; top: 0; left: 0; z-index: 300; pointer-events: none;
   display: flex; align-items: center; justify-content: center; gap: 5px;
-  min-width: 23px; height: 23px; padding: 0 5px; border-radius: 7px;
+  min-width: 23px; max-width: min(190px, calc(100vw - 16px)); height: 23px; padding: 0 7px; border-radius: 7px;
   border: 1px solid rgba(var(--theme-border-rgb), .28); background: rgb(var(--theme-surface-rgb));
   color: rgba(var(--theme-text-rgb), .75); font-size: 10px; box-shadow: 0 3px 9px rgba(var(--theme-shadow-rgb), .15);
 }
+.task-drag-title { min-width: 0; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-drag-indicator > span:not(.task-drag-title) { flex: 0 0 auto; }
+.task-drag-preview-label { position: absolute; inset: 0; display: grid; align-items: center; justify-content: end; visibility: visible; color: rgb(var(--theme-glow-rgb)); font-size: 10px; white-space: nowrap; }
+.task-drag-projection .long-task-actions { position: relative; }
 .task-drag-indicator svg { width: 12px; height: 12px; stroke-width: 1.5; }
 .task-drag-indicator.is-drop-invalid { opacity: .6; }
 .task-drag-indicator.is-drop-invalid svg { visibility: hidden; }
@@ -335,8 +347,19 @@ html[data-appearance="botanical"] .task-body { padding-right: 0; }
   border: 1px solid currentColor; border-radius: 50%;
   background: linear-gradient(135deg, transparent 45%, currentColor 46%, currentColor 53%, transparent 54%);
 }
-html[data-appearance="botanical"] .task-drag-projection { opacity: .7; }
+html[data-appearance="botanical"] .task-drag-projection { opacity: .96; outline: 1px solid rgba(var(--theme-glow-rgb), .72); outline-offset: -1px; }
 html[data-appearance="botanical"] .task-drag-projection.is-drop-invalid { opacity: .22; }
+body.is-task-dragging .task-tree .task-row * { pointer-events: none !important; }
+
+/* Fold only height/opacity. No lateral rescale or delayed SVG path tween. */
+html[data-appearance="botanical"] .children,
+html[data-appearance="botanical"] .children.is-collapsed,
+html[data-appearance="botanical"] .children > .task-node,
+html[data-appearance="botanical"] .children.is-collapsed > .task-node { transform: none; }
+html[data-appearance="botanical"] .task-plant-branches { transition: opacity 160ms ease; }
+html[data-appearance="botanical"] .task-node.is-collapsed > .task-plant-branches { opacity: 0; }
+html[data-appearance="botanical"] .is-tree-folding .task-node:has(.children.is-animating) { overflow: hidden; }
+html[data-appearance="botanical"] .is-tree-folding .task-plant-branches path { transition: none; }
 
 /* The calendar frame has quiet vines; empty-day leaves are decorative, never status marks. */
 .month-plant-frame { display: none; }
@@ -355,18 +378,17 @@ html[data-appearance="botanical"] .month-plant-frame {
 /* Pinned windows have a persistent text state, not just a faint tint. */
 .window-control.pin {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;
-  flex: 0 0 auto; width: 25px; height: 23px; border-radius: 7px;
-  border: 1px solid rgba(var(--theme-border-rgb), .18);
-  background: transparent; color: rgba(var(--theme-text-rgb), .6);
+  flex: 0 0 auto; width: 15px; height: 15px; padding: 0; border-radius: 50%; border: 0;
+  background: rgba(var(--theme-text-rgb), .28); color: rgba(var(--theme-shadow-rgb), .8);
 }
 .window-control.pin .pin-state { display: none; font-size: 10px; white-space: nowrap; }
-.window-control.pin svg { width: 12px; height: 12px; transition: transform 160ms ease; }
+.window-control.pin svg { width: 10px; height: 10px; transition: transform 160ms ease; }
 .window-control.pin:hover { background: rgba(var(--theme-glow-rgb), .12); color: var(--text); }
 .window-control.pin.is-active {
-  width: auto; padding: 0 7px; border-color: rgb(var(--theme-glow-rgb));
-  background: rgb(var(--theme-glow-rgb)); color: rgb(var(--theme-shadow-rgb));
+  width: 15px; padding: 0; background: rgb(var(--theme-glow-rgb)); color: rgb(var(--theme-shadow-rgb));
+  box-shadow: 0 0 0 1px rgba(var(--theme-glow-rgb), .45);
 }
-.window-control.pin.is-active .pin-state { display: inline; }
+.window-control.pin.is-active .pin-state { display: none; }
 .window-control.pin.is-active svg { transform: rotate(-35deg); }
 .window-titlebar.is-pinned { border-bottom-color: rgba(var(--theme-glow-rgb), .45); }
 

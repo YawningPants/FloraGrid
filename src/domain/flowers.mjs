@@ -1,4 +1,6 @@
-export const flowerVariants = ['wild', 'daisy', 'cosmos', 'plum', 'star', 'camellia'];
+export const flowerVariants = ['wild', 'daisy', 'cosmos', 'plum', 'star', 'camellia', 'clover', 'lotus', 'lily', 'aster'];
+// Keep older ID-derived appearances stable when the random pool grows.
+const historicalFlowerVariants = flowerVariants.slice(0, 6);
 export const flowerTones = ['cream', 'rose', 'blue', 'lilac', 'apricot', 'sage'];
 
 export function isTaskFlower(value) {
@@ -10,7 +12,7 @@ export function getTaskFlower(task = {}) {
   if (isTaskFlower(task.flower)) return task.flower;
   const id = task.id || 'rizhi';
   return {
-    variant: flowerVariants[hash(`${id}:flower`) % flowerVariants.length],
+    variant: historicalFlowerVariants[hash(`${id}:flower`) % historicalFlowerVariants.length],
     tone: flowerTones[hash(`${id}:tone`) % flowerTones.length],
   };
 }

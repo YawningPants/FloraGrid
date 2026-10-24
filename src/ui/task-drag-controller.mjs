@@ -95,13 +95,16 @@ export function createTaskDragController(config) {
     const beforeNode = target.beforeId === null ? null : nodeFor(rowFor(target.beforeId));
     const preview = config.createPreview(findTask(session.items, session.taskId), target, session.items);
     preview.classList.add('task-drag-projection');
+    const label = document.createElement('span');
+    label.className = 'task-drag-preview-label';
+    label.textContent = '正在移动';
+    preview.querySelector(config.flat ? '.long-task-actions' : '.task-row-controls')?.append(label);
     preview.setAttribute('aria-hidden', 'true');
     preview.inert = true;
     session.preview?.remove();
     container.insertBefore(preview, beforeNode);
     session.preview = preview;
     session.target = target;
-    elements().forEach((row) => row.classList.toggle('is-drag-parent', row.dataset.taskId === target.parentId));
     config.afterLayout?.();
     measure(); // Measure before applying transforms. Animations are never used for hit testing.
     if (animate) animateFrom(before);
@@ -127,6 +130,9 @@ export function createTaskDragController(config) {
     indicator.className = 'task-drag-indicator';
     indicator.setAttribute('aria-hidden', 'true');
     indicator.innerHTML = icon('move');
+    const title = document.createElement('span'); title.className = 'task-drag-title';
+    title.textContent = findTask(session.items, session.taskId)?.title || '未命名任务';
+    indicator.append(title);
     const count = countDescendants(findTask(session.items, session.taskId));
     if (count) {
       const badge = document.createElement('span');
@@ -146,7 +152,7 @@ export function createTaskDragController(config) {
     if (!session?.dragging) return;
     const bounds = viewport();
     const point = session.point;
-    const badgeX = Math.max(6, Math.min(point.x + 14, innerWidth - session.indicatorWidth - 6));
+    const badgeX = Math.max(6, Math.min(point.x + 16, innerWidth - session.indicatorWidth - 6));
     const badgeY = point.y + 38 < innerHeight ? point.y + 15 : point.y - 30;
     session.indicator.style.transform = `translate3d(${badgeX}px, ${badgeY}px, 0)`;
     const inside = point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom;

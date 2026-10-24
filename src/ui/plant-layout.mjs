@@ -62,10 +62,13 @@ export function paintTaskPlant(layout) {
   if (!svg) {
     svg = document.createElementNS(svgNamespace, 'svg'); svg.classList.add('task-plant-branches');
     svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
-    svg.setAttribute('preserveAspectRatio', 'xMinYMin slice'); host.prepend(svg);
+    svg.setAttribute('preserveAspectRatio', 'xMinYMin meet'); host.prepend(svg);
   }
   const box = `0 0 ${layout.width} ${layout.height}`;
   if (svg.getAttribute('viewBox') !== box) svg.setAttribute('viewBox', box);
+  // A percentage height with "slice" magnifies X as an ancestor expands.
+  // Keep a 1:1 drawing viewport; the animated task wrapper provides clipping.
+  if (svg.style.height !== `${layout.height}px`) svg.style.height = `${layout.height}px`;
   const existing = new Map([...svg.children].map(path => [path.dataset.branchKey, path]));
   const wanted = new Set(layout.paths.map(path => path.key));
   existing.forEach((path, key) => { if (!wanted.has(key)) path.remove(); });

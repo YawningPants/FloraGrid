@@ -1,6 +1,7 @@
 import { tagPalette } from '../data/sample-calendar.mjs';
 import { getDayDisplayMeta, getTodayDateKey, shiftDateKey } from '../domain/date.mjs';
 import { ensureTaskFlower, getTaskFlower } from '../domain/flowers.mjs';
+import { canPresentTaskTags } from '../domain/task-presentation.mjs';
 import {
   cloneTemplateAsSnapshot,
   createTagSnapshot,
@@ -49,7 +50,7 @@ import {
 import { loadTagTemplates } from '../storage/tag-template-storage.mjs';
 import { appendHighlightedText, el, escapeHtml, truncateText } from '../ui/dom.mjs';
 import { icon } from '../ui/icons.mjs';
-import { botanicalMotionEnabled, completionMarkup, createBotanicalEmpty, markNewShoot, rootTaskMarkup, sproutMarkup } from '../ui/botanical.mjs';
+import { botanicalMotionEnabled, completionMarkup, createBotanicalEmpty, markNewShoot, sproutMarkup } from '../ui/botanical.mjs';
 import { showNotice } from '../ui/notice.mjs';
 import { createScrollRegion, disposeScrollRegion } from '../ui/scroll-region.mjs';
 import { applyTagLineReserve, applyTreeBranchLayout, queueTaskTreeLayout } from '../ui/task-tree-layout.mjs';
@@ -413,13 +414,13 @@ function createTaskRow(task, depth, visibleTags) {
     if (row.contains(focused) && focused.matches('button:not(:focus-visible)')) focused.blur();
   });
 
-  row.append(createDragHandle(task), createStatusButton(task, depth), createTaskBody(task, visibleTags));
-  const actions = createTaskActions(task);
+  row.append(createDragHandle(task), createStatusButton(task, depth), createTaskBody(task, visibleTags, depth));
+  const actions = createTaskActions(task, depth);
   if (hasChildren || actions.childElementCount || canColorTask(task)) {
     const controls = el('div', 'task-row-controls');
-    if (hasChildren) controls.append(createCollapseToggle(task));
     controls.append(actions, createTaskColorButton(task)); row.querySelector('.task-meta-row').append(controls);
   }
+  if (hasChildren) row.append(createCollapseToggle(task));
   if (task.reminder) {
     const badge = el('button', 'reminder-task-badge'); badge.type = 'button';
     badge.innerHTML = icon(task.kind === 'birthday' ? 'cake' : task.kind === 'anniversary' ? 'heart' : 'bell');
@@ -478,7 +479,6 @@ function createStatusButton(task, depth) {
   button.type = 'button';
   button.setAttribute('aria-label', taskStatusMeta[task.status].label);
   if (task.status === 'completed') button.innerHTML = completionMarkup(task);
-  else if (task.status === 'active' && depth === 0) button.innerHTML = rootTaskMarkup();
   else button.textContent = taskStatusMeta[task.status].symbol;
   if (task.status === 'active' || task.status === 'completed') {
     button.title = task.status === 'active' ? '标记完成' : '改为进行中';
@@ -490,14 +490,16 @@ function createStatusButton(task, depth) {
   return button;
 }
 
-function createTaskBody(task, visibleTags) {
+function createTaskBody(task, visibleTags, depth) {
+  // Preserve the full tag snapshot and inherited-tag implementation for re-enabling.
+  const displayTags = canPresentTaskTags(depth) ? visibleTags : [];
   const body = el('div', 'task-body');
   const title =
     task.id === editingTaskId ? createTaskTitleInput(task) : createTaskTitleText(task);
   const tags = el('div', 'tag-list');
   const inheritedTagCount = visibleTags.length - task.tags.length;
 
-  visibleTags.forEach((tag, index) => {
+  displayTags.forEach((tag, index) => {
     const chip = el('span', 'tag-chip');
     const isInherited = index < inheritedTagCount;
     chip.classList.toggle('is-inherited', isInherited);
@@ -524,7 +526,7 @@ function createTaskBody(task, visibleTags) {
   });
   body.append(title);
   const meta = el('div', 'task-meta-row');
-  if (visibleTags.length > 0) {
+  if (displayTags.length > 0) {
     meta.append(tags);
   }
   body.append(meta);
@@ -893,7 +895,7 @@ async function openSettingsWindow() {
   }
 }
 
-function createTaskActions(task) {
+function createTaskActions(task, depth) {
   const actions = el('div', `task-actions ${task.status === 'deleted' ? 'deleted-actions' : ''}`);
 
   if (task.status === 'deleted') {
@@ -907,9 +909,9 @@ function createTaskActions(task) {
   if (task.status === 'active') {
     actions.append(
       actionButton(icon('plus'), 'child', '新建子任务', () => addChildTask(task.id)),
-      createTagAddButton(task),
       actionButton(icon('fail'), 'fail', '标记失败', () => failTask(task.id)),
     );
+    if (canPresentTaskTags(depth)) actions.insertBefore(createTagAddButton(task), actions.querySelector('.fail'));
   }
   if (task.status === 'failed') {
     actions.append(actionButton(icon('restore'), 'restore', '恢复进行中', () => restoreFailedTask(task.id)));
@@ -1881,9 +1883,10 @@ function toggleTaskCollapse(taskId) {
 function cancelChildrenAnimation(children) {
   const pending = childrenAnimations.get(children);
   if (!pending) return;
-  cancelAnimationFrame(pending.frame); clearTimeout(pending.timer);
+  cancelAnimationFrame(pending.frame); cancelAnimationFrame(pending.layoutFrame); clearTimeout(pending.timer);
   children.removeEventListener('transitionend', pending.onEnd);
   childrenAnimations.delete(children); pending.resolve(false);
+  document.querySelector('.day-window')?.classList.toggle('is-tree-folding', childrenAnimations.size > 0);
 }
 
 function animateChildrenCollapse(row, wrapper, children, collapsed, { animate = true } = {}) {
@@ -1906,6 +1909,7 @@ function animateChildrenCollapse(row, wrapper, children, collapsed, { animate = 
     applyTreeBranchLayout(root);
     return Promise.resolve(true);
   }
+  root?.classList.add('is-tree-folding');
   // Freeze the current height before changing the collapsed class. This also
   // lets a quick reverse start from the actual interpolated height.
   children.style.transition = 'none';
@@ -1918,14 +1922,23 @@ function animateChildrenCollapse(row, wrapper, children, collapsed, { animate = 
   const targetHeight = collapsed ? 0 : last ? last.offsetTop + last.offsetHeight : 0;
   let resolve;
   const promise = new Promise(done => { resolve = done; });
-  const pending = { promise, resolve, frame: 0, timer: 0, onEnd: null };
+  const pending = { promise, resolve, frame: 0, layoutFrame: 0, timer: 0, onEnd: null };
+  const containers = new Set();
+  for (let branch = children; branch; branch = branch.parentElement?.closest('.children')) containers.add(branch);
+  const updateBranches = () => {
+    if (childrenAnimations.get(children) !== pending) return;
+    applyTreeBranchLayout(root, { containers });
+    pending.layoutFrame = requestAnimationFrame(updateBranches);
+  };
   const finish = () => {
     if (childrenAnimations.get(children) !== pending) return;
     clearTimeout(pending.timer);
+    cancelAnimationFrame(pending.layoutFrame);
     children.removeEventListener('transitionend', pending.onEnd);
     childrenAnimations.delete(children);
     children.classList.remove('is-animating'); children.style.removeProperty('--children-height');
     if (children.isConnected) applyTreeBranchLayout(root);
+    root?.classList.toggle('is-tree-folding', childrenAnimations.size > 0);
     resolve(true);
   };
   pending.onEnd = event => { if (event.target === children && event.propertyName === 'height') finish(); };
@@ -1933,7 +1946,7 @@ function animateChildrenCollapse(row, wrapper, children, collapsed, { animate = 
   childrenAnimations.set(children, pending);
   pending.frame = requestAnimationFrame(() => {
     children.style.setProperty('--children-height', `${targetHeight}px`);
-    applyTreeBranchLayout(root);
+    updateBranches();
     pending.timer = window.setTimeout(finish, 310);
   });
   return promise;

@@ -37,9 +37,9 @@ export function applyTagLineReserve(root) {
   });
 }
 
-export function applyTreeBranchLayout(root) {
+export function applyTreeBranchLayout(root, { containers = null } = {}) {
   const botanical = document.documentElement.dataset.appearance === 'botanical';
-  const layouts = [...(root?.querySelectorAll('.children') || [])].map((children) => {
+  const layouts = [...(containers || root?.querySelectorAll('.children') || [])].filter(children => children.isConnected).map((children) => {
     if (botanical) return { children, plant: measureTaskPlant(children) };
     const lastNode = children.querySelector(':scope > .task-node:last-child');
     const lastBranch = lastNode?.querySelector(':scope > .tree-branch');
