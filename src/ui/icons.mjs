@@ -1,4 +1,5 @@
 const icons = {
+  move: '<svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M8 7l4-4 4 4M8 17l4 4 4-4M7 8l-4 4 4 4M17 8l4 4-4 4"/></svg>',
   bell: '<svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>',
   'task-list': '<svg viewBox="0 0 24 24"><path d="m3 6 1.5 1.5L7 4.5M11 6h10M3 12h4m4 0h10M3 18h4m4 0h10"/></svg>',
   cake: '<svg viewBox="0 0 24 24"><path d="M4 12h16v9H4zM4 16c3 3 5-3 8 0s5-3 8 0M8 12V8m4 4V8m4 4V8M8 5V3m4 2V3m4 2V3"/></svg>',

@@ -64,6 +64,17 @@ try {
     throw Error(`Timed out: ${expression}`);
   };
   const click = selector => read(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  const pointerClick = async selector => {
+    await read(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'nearest'})`);
+    const r = await read(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`);
+    await command('Input.dispatchMouseEvent', {type:'mouseMoved',x:r.x,y:r.y,buttons:0});
+    await command('Input.dispatchMouseEvent', {type:'mousePressed',x:r.x,y:r.y,button:'left',buttons:1,clickCount:1});
+    await command('Input.dispatchMouseEvent', {type:'mouseReleased',x:r.x,y:r.y,button:'left',buttons:0,clickCount:1});
+  };
+  const key = async (name, code) => {
+    await command('Input.dispatchKeyEvent', {type:'keyDown',key:name,code:name,windowsVirtualKeyCode:code,...(name==='Enter'?{text:'\r',unmodifiedText:'\r'}:{})});
+    await command('Input.dispatchKeyEvent', {type:'keyUp',key:name,code:name,windowsVirtualKeyCode:code});
+  };
   const reload = async ready => {
     const previous = await read('performance.timeOrigin');
     await command('Page.reload');
@@ -165,14 +176,52 @@ try {
   await setTheme({ presetId:'morning', opacity:.9, appearance:'botanical', completionMotion:true });
   await command('Emulation.setDeviceMetricsOverride', { width:390, height:1000, deviceScaleFactor:2, mobile:false });
   await wait("document.querySelector('.task-plant-branches .plant-fork')");
+  assert.equal(await read("Boolean(document.querySelector('[data-task-id=\"visual-parent\"] .task-root-symbol'))&&!document.querySelector('[data-task-id=\"visual-a\"] .task-root-symbol')"), true);
   assert.equal(await read("getComputedStyle(document.querySelector('[data-task-id=\"visual-a\"]')).borderTopWidth"), '0px');
   assert.equal(await read("document.querySelectorAll('[data-task-id=\"visual-a\"] .tag-chip').length"), 2);
   assert.equal(await read("document.querySelectorAll('.task-plant-branches .plant-fork').length>=6"), true);
   assert.equal(await read("new Set([...document.querySelectorAll('[data-task-id^=\"visual-flower-\"] .completion-flower')].map(f=>f.dataset.flowerVariant)).size"), 6);
+  // Animated screen rectangles must not contaminate branch geometry.
+  assert.equal(await read(`(async()=>{const {applyTreeBranchLayout}=await import('/src/ui/task-tree-layout.mjs');const root=document.querySelector('.day-window');applyTreeBranchLayout(root);const svg=document.querySelector('[data-task-id="visual-parent"]').closest('.task-node').querySelector(':scope > .task-plant-branches');const before=[...svg.children].map(p=>p.getAttribute('d'));const row=document.querySelector('[data-task-id="visual-a"]');const animation=row.animate([{transform:'translateY(0)'},{transform:'translateY(30px)'}],{duration:300,fill:'both'});await new Promise(r=>setTimeout(r,80));applyTreeBranchLayout(root);const same=JSON.stringify(before)===JSON.stringify([...svg.children].map(p=>p.getAttribute('d')));animation.cancel();return same})()`), true);
+  // Actual mouse selection releases task focus; keyboard Escape restores it.
+  await pointerClick('[data-task-id="visual-a"] .task-color-button');
+  await wait("document.querySelector('.task-color-palette')");
+  await pointerClick('.task-color-choice:nth-child(2)');
+  await command('Input.dispatchMouseEvent', {type:'mouseMoved',x:2,y:2,buttons:0}); await sleep(170);
+  assert.equal(await read("Boolean(document.activeElement.closest('.task-row'))"), false);
+  assert.equal(await read("getComputedStyle(document.querySelector('[data-task-id=\"visual-a\"]')).backgroundColor"), 'rgba(0, 0, 0, 0)');
+  await read("document.querySelector('[data-task-id=\"visual-a\"] .task-color-button').focus()");
+  await key('Enter',13); await wait("document.querySelector('.task-color-palette')");
+  await key('Escape',27);
+  assert.equal(await read("document.activeElement.matches('.task-color-button:focus-visible')"), true);
+  await read('document.activeElement.blur()');
+  // Only active tasks edit; notices appear by the task area, above notes.
+  await pointerClick('[data-task-id="visual-c"] .task-title'); await sleep(180);
+  assert.equal(await read("document.querySelector('.task-notice').textContent.includes('已完成的任务暂不能编辑')"), true);
+  assert.equal(await read("(()=>{const n=document.querySelector('.task-notice').getBoundingClientRect(),h=document.querySelector('.day-toolbar').getBoundingClientRect(),notes=document.querySelector('.daily-notes').getBoundingClientRect();return n.top>h.bottom&&n.bottom<notes.top&&document.querySelector('.task-notice').getAttribute('role')==='status'})()"), true);
+  await screenshot('interaction-feedback');
+  await pointerClick('[data-task-id="visual-parent"] .status-button');
+  assert.equal(await read("document.querySelector('.task-notice').textContent.includes('请先处理所有进行中的子任务')"), true);
+  await pointerClick('.window-control.pin'); await wait("document.querySelector('.pin[aria-pressed=\"true\"]')");
+  assert.equal(await read("getComputedStyle(document.querySelector('.pin-state')).display!=='none'&&document.querySelector('.pin-state').textContent==='已置顶'"), true);
+  await screenshot('pinned-day');
+  await pointerClick('.window-control.pin'); await wait("document.querySelector('.pin[aria-pressed=\"false\"]')");
+  assert.equal(await read("getComputedStyle(document.querySelector('.pin-state')).display"), 'none');
+  check('branches ignore in-flight transforms; mouse palette focus clears; keyboard focus survives; root symbol, pin state and task-area notices');
+  await sleep(3300);
   await screenshot('branches-day');
-  await command('Emulation.setDeviceMetricsOverride', { width:320, height:780, deviceScaleFactor:2, mobile:false });
-  await read('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
-  assert.equal(await read('document.documentElement.scrollWidth<=innerWidth'), true);
+  for (const width of [390,320]) {
+    await command('Emulation.setDeviceMetricsOverride', { width,height:780,deviceScaleFactor:2,mobile:false });
+    await read('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))');
+    assert.equal(await read('document.documentElement.scrollWidth<=innerWidth'), true);
+    assert.equal(await read(`(()=>{const overlaps=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>.5&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>.5;return [...document.querySelectorAll('.task-row')].every(row=>{const tools=[...row.querySelectorAll('.task-row-controls button')].map(b=>b.getBoundingClientRect()).filter(r=>r.width&&r.height),tags=row.querySelector('.tag-list')?.getBoundingClientRect(),drag=row.querySelector('.drag-handle')?.getBoundingClientRect(),fold=row.querySelector('.collapse-toggle')?.getBoundingClientRect();return !tools.some((r,i)=>tools.slice(i+1).some(s=>overlaps(r,s)))&&(!tags||!tools.some(r=>overlaps(r,tags)))&&(!drag||!fold||!overlaps(drag,fold))})})()`), true, `controls must not overlap at ${width}px`);
+  }
+  // Adding a child updates the shared graph, rather than joining a separate CSS stem.
+  const forksBefore = await read("document.querySelector('[data-task-id=\"visual-parent\"]').closest('.task-node').querySelector(':scope > .task-plant-branches').querySelectorAll('.plant-fork').length");
+  await pointerClick('[data-task-id="visual-parent"] .child'); await wait("document.querySelector('.task-title-input')");
+  await read("(()=>{const i=document.querySelector('.task-title-input');i.value='新增的一片叶';i.dispatchEvent(new Event('input',{bubbles:true}));i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}))})()");
+  await wait(`document.querySelector('[data-task-id="visual-parent"]').closest('.task-node').querySelector(':scope > .task-plant-branches')?.querySelectorAll('.plant-fork').length===${forksBefore+1}`);
+  assert.equal(await read("getComputedStyle(document.querySelector('[data-task-id=\"visual-parent\"]'),'::after').content"), 'none');
   await setTheme({ presetId:'morning', opacity:.9, appearance:'minimal' });
   assert.equal(await read("getComputedStyle(document.querySelector('[data-task-id=\"visual-a\"]')).borderTopWidth"), '1px');
   await setTheme({ presetId:'sage', opacity:.84, appearance:'botanical', completionMotion:true });
@@ -211,6 +260,11 @@ try {
   await read(`(()=>{const dates=${JSON.stringify(dates)},labels=${JSON.stringify(labels)},colors=${JSON.stringify(colors)},variants=${JSON.stringify(variants)},tones=${JSON.stringify(tones)};dates.forEach((day,i)=>{const date='2026-10-'+String(day).padStart(2,'0');localStorage.setItem('desktop-calendar:day:'+date,JSON.stringify({date,note:'',tasks:Array.from({length:i%4+1},(_,j)=>({id:'calendar-leaf-'+i+'-'+j,title:labels[(i+j)%6],status:j%3===0?'completed':'active',color:colors[(i+j)%6],flower:{variant:variants[(i+j)%6],tone:tones[(i+j)%6]},tags:[],children:[]}))}))})})()`);
   await reload("document.querySelector('.month-task-chip[data-task-id=\"calendar-leaf-0-0\"]')");
   await wait("Number(document.querySelector('.month-plant-branches')?.dataset.branchDays)>10");
+  assert.equal(await read("document.querySelectorAll('.month-plant-frame .plant-frame-vines path').length>=3&&document.querySelectorAll('.plant-empty-leaves .plant-decor-leaf').length>0&&document.querySelector('.plant-tail-leaves')!==null"), true);
+  assert.equal(await read("getComputedStyle(document.querySelector('.month-plant-frame')).pointerEvents"), 'none');
+  await pointerClick('.window-control.pin'); await wait("document.querySelector('.pin[aria-pressed=\"true\"]')");
+  assert.equal(await read("getComputedStyle(document.querySelector('.pin-state')).display!=='none'"), true);
+  await pointerClick('.window-control.pin');
   await screenshot('branches-month');
   await click('.month-long-toggle');
   assert.equal(await read("getComputedStyle(document.querySelector('.long-task-empty .botanical-empty')).display"), 'flex');

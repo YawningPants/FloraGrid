@@ -1,5 +1,6 @@
 import { applyTaskDrop, flattenDragTree, getOriginDropTarget, locateDragSlot, projectTaskDrop } from '../domain/task-drag.mjs';
 import { canMoveTask, findTask } from '../domain/tasks.mjs';
+import { icon } from './icons.mjs';
 
 const INTENT_DISTANCE = 6;
 const INDENT_DISTANCE = 24;
@@ -113,8 +114,6 @@ export function createTaskDragController(config) {
     session.originalParent = sourceNode.parentNode;
     session.originalNext = sourceNode.nextSibling;
     session.sourceNode = sourceNode;
-    session.offsetX = session.startX - sourceRect.left;
-    session.offsetY = session.startY - sourceRect.top;
 
     const origin = session.sourceRow.cloneNode(true);
     origin.classList.add('task-drag-origin');
@@ -124,20 +123,18 @@ export function createTaskDragController(config) {
     document.body.append(origin);
     session.origin = origin;
 
-    const floating = session.sourceRow.cloneNode(true);
-    floating.classList.add('task-drag-float');
-    floating.inert = true;
-    floating.setAttribute('aria-hidden', 'true');
-    floating.style.width = `${sourceRect.width}px`;
+    const indicator = document.createElement('span');
+    indicator.className = 'task-drag-indicator';
+    indicator.setAttribute('aria-hidden', 'true');
+    indicator.innerHTML = icon('move');
     const count = countDescendants(findTask(session.items, session.taskId));
     if (count) {
       const badge = document.createElement('span');
-      badge.className = 'task-drag-count';
-      badge.textContent = `含 ${count} 项`;
-      floating.append(badge);
+      badge.textContent = `${count + 1} 项`; indicator.append(badge);
     }
-    document.body.append(floating);
-    session.floating = floating;
+    document.body.append(indicator);
+    session.indicator = indicator;
+    session.indicatorWidth = indicator.offsetWidth;
     sourceNode.remove();
     session.dragging = true;
     document.body.classList.add('is-task-dragging');
@@ -149,7 +146,9 @@ export function createTaskDragController(config) {
     if (!session?.dragging) return;
     const bounds = viewport();
     const point = session.point;
-    session.floating.style.transform = `translate3d(${point.x - session.offsetX}px, ${point.y - session.offsetY}px, 0)`;
+    const badgeX = Math.max(6, Math.min(point.x + 14, innerWidth - session.indicatorWidth - 6));
+    const badgeY = point.y + 38 < innerHeight ? point.y + 15 : point.y - 30;
+    session.indicator.style.transform = `translate3d(${badgeX}px, ${badgeY}px, 0)`;
     const inside = point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom;
     let target = null;
     if (inside) {
@@ -161,7 +160,7 @@ export function createTaskDragController(config) {
       if (target && targetKey(target) !== targetKey(session.target)) renderProjection(target);
     }
     session.valid = Boolean(target);
-    session.floating.classList.toggle('is-drop-invalid', !session.valid);
+    session.indicator.classList.toggle('is-drop-invalid', !session.valid);
     session.preview.classList.toggle('is-drop-invalid', !session.valid);
     document.body.classList.toggle('is-task-drop-invalid', !session.valid);
   }
@@ -221,40 +220,24 @@ export function createTaskDragController(config) {
     cancelAnimations();
     if (current.dragging) restore();
     current.origin?.remove();
+    current.indicator?.remove();
     session = null;
     unbind();
     document.body.classList.remove('is-task-dragging', 'is-task-drop-invalid');
     if (config.root.hasPointerCapture?.(current.pointerId)) config.root.releasePointerCapture(current.pointerId);
 
-    let accepted = false;
     if (commit && current.dragging && current.valid) {
       const result = applyTaskDrop(config.getItems(), current.taskId, current.target, current.options);
       if (result) {
-        accepted = true;
         if (result.changed) config.onCommit(result.items);
       }
     }
     if (current.dragging) {
       animateFrom(before);
-      landFloating(current, accepted);
       const swallow = (click) => { click.preventDefault(); click.stopPropagation(); };
       window.addEventListener('click', swallow, { capture: true, once: true });
       window.setTimeout(() => window.removeEventListener('click', swallow, true), 50);
     }
-  }
-
-  function landFloating(current, accepted) {
-    const floating = current.floating;
-    const destination = rowFor(current.taskId)?.getBoundingClientRect();
-    if (!floating || !destination || reducedMotion()) {
-      floating?.remove();
-      return;
-    }
-    const animation = floating.animate([
-      { transform: floating.style.transform, opacity: 0.94 },
-      { transform: `translate3d(${destination.left}px, ${destination.top}px, 0)`, opacity: accepted ? 0 : 0.15 },
-    ], { duration: DURATION, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
-    animation.finished.then(() => floating.remove()).catch(() => floating.remove());
   }
 
   const up = (event) => finish(event, true);

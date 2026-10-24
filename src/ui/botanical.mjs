@@ -25,6 +25,13 @@ export function completionMarkup(task, appearance = document.documentElement.dat
   return appearance === 'minimal' ? '<span class="completion-check" aria-hidden="true">✓</span>' : flowerMarkup(task);
 }
 
+export function rootTaskMarkup() {
+  return `<svg class="task-root-symbol" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M12 15V4M12 10C9 5 6 9 4 4M12 12C15 7 18 10 20 6M12 15C11 19 7 17 6 21M12 15C12 18 14 19 13 22M12 15C15 18 17 16 19 20"/>
+    <circle class="root-heart" cx="12" cy="14" r="2"/>
+  </svg>`;
+}
+
 export function sproutMarkup(className = '') {
   return `<svg class="botanical-sprout ${className}" viewBox="0 0 40 40" fill="none" aria-hidden="true" focusable="false">
     <path class="sprout-stem" d="M20 33C20 25 19 19 22 11"/>

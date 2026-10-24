@@ -117,6 +117,7 @@ try {
   assert.deepEqual(await saved(), beforeDown);
   assert.equal(await evaluate("[...document.querySelectorAll('.task-tree .task-row')].some(e=>e.getAnimations().some(a=>a.playState==='running'))"), true);
   assert.equal(await evaluate("document.querySelector('.drop-preview') === null && Boolean(document.querySelector('.task-drag-projection'))"), true);
+  assert.equal(await evaluate("document.querySelector('.task-drag-float')===null && document.querySelector('.task-drag-indicator').getBoundingClientRect().width<90"), true);
   await mkdir(join(root, 'src-tauri/target'), { recursive: true });
   const screenshot = await command('Page.captureScreenshot', { format: 'png' });
   await writeFile(join(root, 'src-tauri/target/drag-ui-preview.png'), Buffer.from(screenshot.data, 'base64'));
@@ -149,7 +150,7 @@ try {
   await moveTo(invalid.hx, failed.top + 2);
   assert.equal(await evaluate("document.body.classList.contains('is-task-drop-invalid')"), true);
   assert.equal(await evaluate("getComputedStyle(document.body).cursor"), 'grabbing');
-  assert.equal(await evaluate("getComputedStyle(document.querySelector('.task-drag-float'), '::after').content !== 'none'"), true);
+  assert.equal(await evaluate("getComputedStyle(document.querySelector('.task-drag-indicator.is-drop-invalid'), '::after').content !== 'none'"), true);
   const invalidScreenshot = await command('Page.captureScreenshot', { format: 'png' });
   await writeFile(join(root, 'src-tauri/target/drag-invalid-preview.png'), Buffer.from(invalidScreenshot.data, 'base64'));
   await release(invalid.hx, failed.top + 2);

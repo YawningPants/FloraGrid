@@ -38,7 +38,9 @@ export function applyTagLineReserve(root) {
 }
 
 export function applyTreeBranchLayout(root) {
+  const botanical = document.documentElement.dataset.appearance === 'botanical';
   const layouts = [...(root?.querySelectorAll('.children') || [])].map((children) => {
+    if (botanical) return { children, plant: measureTaskPlant(children) };
     const lastNode = children.querySelector(':scope > .task-node:last-child');
     const lastBranch = lastNode?.querySelector(':scope > .tree-branch');
     if (!lastBranch) {
@@ -50,6 +52,7 @@ export function applyTreeBranchLayout(root) {
     return { children, offset, plant: measureTaskPlant(children) };
   });
   layouts.forEach(({ children, offset, plant }) => {
+    if (botanical) { paintTaskPlant(plant); return; }
     if (offset === null) children.style.removeProperty('--last-branch-y');
     else if (children.style.getPropertyValue('--last-branch-y') !== `${offset}px`) children.style.setProperty('--last-branch-y', `${offset}px`);
     paintTaskPlant(plant);

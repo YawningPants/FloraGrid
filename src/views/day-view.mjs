@@ -49,7 +49,8 @@ import {
 import { loadTagTemplates } from '../storage/tag-template-storage.mjs';
 import { appendHighlightedText, el, escapeHtml, truncateText } from '../ui/dom.mjs';
 import { icon } from '../ui/icons.mjs';
-import { botanicalMotionEnabled, completionMarkup, createBotanicalEmpty, markNewShoot, sproutMarkup } from '../ui/botanical.mjs';
+import { botanicalMotionEnabled, completionMarkup, createBotanicalEmpty, markNewShoot, rootTaskMarkup, sproutMarkup } from '../ui/botanical.mjs';
+import { showNotice } from '../ui/notice.mjs';
 import { createScrollRegion, disposeScrollRegion } from '../ui/scroll-region.mjs';
 import { applyTagLineReserve, applyTreeBranchLayout, queueTaskTreeLayout } from '../ui/task-tree-layout.mjs';
 import { createTaskDragController } from '../ui/task-drag-controller.mjs';
@@ -104,6 +105,7 @@ const completionMoves = new Set();
 let completionSettleTimer = 0;
 let completionSettleGeneration = 0;
 const childrenAnimations = new Map();
+let isReplacingTaskArea = false;
 const TAG_GROUP_VISIBLE_CHARS = 5;
 const TAG_GROUP_MIN_WIDTH = 34;
 const TAG_GROUP_MAX_WIDTH = 90;
@@ -406,8 +408,18 @@ function createTaskRow(task, depth, visibleTags) {
   row.dataset.depth = String(depth);
   row.style.setProperty('--depth', depth);
   row.style.setProperty('--accent', getTaskAccentColor(task));
+  row.addEventListener('pointerleave', () => {
+    const focused = document.activeElement;
+    if (row.contains(focused) && focused.matches('button:not(:focus-visible)')) focused.blur();
+  });
 
-  row.append(createDragHandle(task), createStatusButton(task), createTaskBody(task, visibleTags), createTaskActions(task), createTaskColorButton(task));
+  row.append(createDragHandle(task), createStatusButton(task, depth), createTaskBody(task, visibleTags));
+  const actions = createTaskActions(task);
+  if (hasChildren || actions.childElementCount || canColorTask(task)) {
+    const controls = el('div', 'task-row-controls');
+    if (hasChildren) controls.append(createCollapseToggle(task));
+    controls.append(actions, createTaskColorButton(task)); row.querySelector('.task-meta-row').append(controls);
+  }
   if (task.reminder) {
     const badge = el('button', 'reminder-task-badge'); badge.type = 'button';
     badge.innerHTML = icon(task.kind === 'birthday' ? 'cake' : task.kind === 'anniversary' ? 'heart' : 'bell');
@@ -425,9 +437,6 @@ function createTaskRow(task, depth, visibleTags) {
     row.addEventListener('contextmenu', (event) => {
       openTaskContextMenu(event, task);
     });
-  }
-  if (hasChildren) {
-    row.append(createCollapseToggle(task));
   }
   return row;
 }
@@ -463,11 +472,13 @@ function createDragHandle(task) {
   return handle;
 }
 
-function createStatusButton(task) {
+function createStatusButton(task, depth) {
   const button = el('button', `status-button ${task.status}`);
+  button.dataset.taskRole = depth === 0 ? 'root' : 'leaf';
   button.type = 'button';
   button.setAttribute('aria-label', taskStatusMeta[task.status].label);
   if (task.status === 'completed') button.innerHTML = completionMarkup(task);
+  else if (task.status === 'active' && depth === 0) button.innerHTML = rootTaskMarkup();
   else button.textContent = taskStatusMeta[task.status].symbol;
   if (task.status === 'active' || task.status === 'completed') {
     button.title = task.status === 'active' ? '标记完成' : '改为进行中';
@@ -512,9 +523,11 @@ function createTaskBody(task, visibleTags) {
     tags.append(chip);
   });
   body.append(title);
+  const meta = el('div', 'task-meta-row');
   if (visibleTags.length > 0) {
-    body.append(tags);
+    meta.append(tags);
   }
+  body.append(meta);
   return body;
 }
 
@@ -936,7 +949,7 @@ function createTaskColorButton(task) {
     closeTaskContextMenu();
     closeTagPopover();
     renderTagPopoverOnly(document.querySelector('.day-window'));
-    openTaskColorPalette(task, button);
+    openTaskColorPalette(task, button, { keyboard: event.detail === 0 });
   });
   return button;
 }
@@ -961,7 +974,7 @@ function setTaskColor(taskId, color) {
   updateTaskColorInPlace(task);
 }
 
-function openTaskColorPalette(task, trigger) {
+function openTaskColorPalette(task, trigger, { keyboard = false } = {}) {
   const palette = el('section', 'task-color-palette');
   palette.setAttribute('role', 'dialog');
   palette.setAttribute('aria-label', '选择任务颜色');
@@ -980,7 +993,7 @@ function openTaskColorPalette(task, trigger) {
     button.append(swatch);
     button.addEventListener('click', () => {
       setTaskColor(task.id, color);
-      closeTaskColorPalette(true);
+      closeTaskColorPalette(taskColorPalette?.keyboard);
     });
     grid.append(button);
   });
@@ -993,12 +1006,14 @@ function openTaskColorPalette(task, trigger) {
   noColor.innerHTML = '<span class="task-color-none-mark" aria-hidden="true"></span>';
   noColor.addEventListener('click', () => {
     setTaskColor(task.id, null);
-    closeTaskColorPalette(true);
+    closeTaskColorPalette(taskColorPalette?.keyboard);
   });
   grid.append(noColor);
 
   document.body.append(palette);
-  taskColorPalette = { taskId: task.id, element: palette, trigger };
+  taskColorPalette = { taskId: task.id, element: palette, trigger, keyboard };
+  palette.addEventListener('pointerdown', () => { if (taskColorPalette) taskColorPalette.keyboard = false; });
+  palette.addEventListener('keydown', () => { if (taskColorPalette) taskColorPalette.keyboard = true; });
   trigger.setAttribute('aria-expanded', 'true');
   positionTaskColorPalette(palette, trigger);
   (palette.querySelector('.task-color-choice.is-selected') || noColor).focus({ preventScroll: true });
@@ -1021,12 +1036,15 @@ function closeTaskColorPalette(restoreFocus = false) {
   if (!taskColorPalette) {
     return;
   }
-  const { element, trigger } = taskColorPalette;
+  const { element, trigger, taskId } = taskColorPalette;
+  const focused = document.activeElement;
   taskColorPalette = null;
   element.remove();
   trigger.setAttribute('aria-expanded', 'false');
   if (restoreFocus && trigger.isConnected) {
     trigger.focus({ preventScroll: true });
+  } else if (element.contains(focused) || getTaskRow(taskId)?.contains(focused)) {
+    if (!focused?.matches('input,textarea,[contenteditable="true"]')) focused?.blur?.();
   }
 }
 
@@ -1256,6 +1274,12 @@ function createTaskTitleText(task) {
         editingTaskId = task.id;
       renderDayView(document.querySelector('.day-window'));
     });
+  } else {
+    const hint = task.status === 'completed' ? '已完成的任务暂不能编辑，请先改为进行中。'
+      : task.status === 'failed' ? '已失败的任务暂不能编辑，请先恢复为进行中。'
+      : '已删除的任务暂不能编辑，请先恢复任务。';
+    title.title = hint;
+    title.addEventListener('click', () => showToast(hint));
   }
   return title;
 }
@@ -1287,6 +1311,11 @@ function startNoteResize(event, notes) {
 
 function createTaskTitleInput(task) {
   const input = el('input', 'task-title-input');
+  let settled = false;
+  const finish = () => {
+    if (settled || isReplacingTaskArea || editingTaskId !== task.id) return;
+    settled = true; finishTaskEditing(task);
+  };
   input.value = task.title;
   input.placeholder = '输入任务名称';
   input.setAttribute('aria-label', '输入任务名称');
@@ -1297,16 +1326,16 @@ function createTaskTitleInput(task) {
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      finishTaskEditing(task);
+      finish();
     }
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      cancelEmptyTask(task);
+      if (!settled) { settled = true; cancelEmptyTask(task); }
     }
   });
   input.addEventListener('blur', () => {
-    finishTaskEditing(task);
+    finish();
   });
   queueMicrotask(() => {
     input.focus({ preventScroll: true });
@@ -2130,6 +2159,12 @@ function destroyTask(taskId) {
   showDestroyConfirm(task);
 }
 
+function replaceTaskRegion(current, next) {
+  isReplacingTaskArea = true;
+  try { current?.replaceWith(next); }
+  finally { isReplacingTaskArea = false; }
+}
+
 function renderDayView(root) {
   if (!root) {
     return;
@@ -2146,7 +2181,7 @@ function renderDayView(root) {
   const nextRegion = createTaskScrollRegion(taskState);
   const nextList = nextRegion.querySelector('.task-list');
   disposeScrollRegion(currentRegion);
-  currentRegion?.replaceWith(nextRegion);
+  replaceTaskRegion(currentRegion, nextRegion);
   nextList.scrollTop = scrollTop;
   window.requestAnimationFrame(() => {
     nextList.scrollTop = scrollTop;
@@ -2170,7 +2205,7 @@ function renderTaskAreaOnly(root) {
   const nextRegion = createTaskScrollRegion(taskState);
   const nextList = nextRegion.querySelector('.task-list');
   disposeScrollRegion(currentRegion);
-  currentRegion?.replaceWith(nextRegion);
+  replaceTaskRegion(currentRegion, nextRegion);
   nextList.scrollTop = scrollTop;
   window.requestAnimationFrame(() => {
     nextList.scrollTop = scrollTop;
@@ -2537,14 +2572,7 @@ function closeDialog() {
 }
 
 function showToast(message) {
-  document.querySelector('.toast')?.remove();
-  const toast = el('div', 'toast');
-  toast.textContent = message;
-  document.body.append(toast);
-  window.setTimeout(() => {
-    toast.classList.add('is-hiding');
-    toast.addEventListener('animationend', () => toast.remove(), { once: true });
-  }, 1800);
+  showNotice(message);
 }
 
 function getVisibleTaskTree(items) {

@@ -45,6 +45,7 @@ import { el, escapeHtml, truncateText } from '../ui/dom.mjs';
 import { icon } from '../ui/icons.mjs';
 import { completionMarkup, createBotanicalEmpty, sproutMarkup } from '../ui/botanical.mjs';
 import { queueMonthPlant } from '../ui/plant-layout.mjs';
+import { showNotice } from '../ui/notice.mjs';
 import { createWindowTitleBar } from '../ui/window-titlebar.mjs';
 import { openSettingsWindow as openSharedSettingsWindow } from '../ui/settings-window.mjs';
 import { createTaskDragController } from '../ui/task-drag-controller.mjs';
@@ -1343,15 +1344,7 @@ async function pasteTaskToMonthDate(dateKey) {
 }
 
 function showMonthToast(message) {
-  document.querySelector('.toast')?.remove();
-  const toast = el('div', 'toast');
-  toast.textContent = message;
-  document.body.append(toast);
-  window.setTimeout(() => {
-    toast.classList.add('is-hiding');
-    toast.addEventListener('animationend', () => toast.remove(), { once: true });
-    window.setTimeout(() => toast.remove(), 240);
-  }, 1800);
+  showNotice(message);
 }
 
 async function switchMonth(root, offsetMonths) {

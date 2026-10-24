@@ -19,7 +19,7 @@ export function createWindowTitleBar({
       <span>${escapeHtml(windowTitle)}</span>
     </div>
     <div class="window-controls">
-      ${pin ? `<button class="window-control pin" type="button" title="${escapeHtml(pin.label)}" aria-label="${escapeHtml(pin.label)}" aria-pressed="${pin.active}">${icon('pin')}</button>` : ''}
+      ${pin ? `<button class="window-control pin" type="button" title="${escapeHtml(pin.label)}" aria-label="${escapeHtml(pin.label)}" aria-pressed="${pin.active}">${icon('pin')}<span class="pin-state" aria-hidden="true">已置顶</span></button>` : ''}
       <button class="window-control minimize" type="button" title="最小化" aria-label="最小化"></button>
       <button class="window-control close" type="button" title="关闭" aria-label="关闭"></button>
     </div>
@@ -27,8 +27,12 @@ export function createWindowTitleBar({
 
   const pinButton = titleBar.querySelector('.pin');
   pinButton?.classList.toggle('is-active', Boolean(pin?.active));
+  titleBar.classList.toggle('is-pinned', Boolean(pin?.active));
   pinButton?.addEventListener('click', async (event) => {
-    await pin?.onToggle?.(event.currentTarget);
+    const button = event.currentTarget;
+    button.disabled = true;
+    try { await pin?.onToggle?.(button); }
+    finally { button.disabled = false; titleBar.classList.toggle('is-pinned', button.classList.contains('is-active')); }
   });
 
   titleBar.querySelector('.minimize')?.addEventListener('click', () => {
