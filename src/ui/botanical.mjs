@@ -1,7 +1,7 @@
 import { el } from './dom.mjs';
 import { getTaskFlower } from '../domain/flowers.mjs';
 
-// Small vector marks; no images, background loops, or additional WebViews.
+// Shared vector marks with cached shapes; no images or additional WebViews.
 const petals = {
   wild: [5, 'M0-1.6C-2.7-2.7-5-6.6-2.8-9.2C-.5-11.5 3.8-10.2 3.5-7.5C3.2-4.9 1.8-2.6 0-1.6Z'],
   daisy: [8, 'M0-2C-1.9-4-2.3-8-1.3-10.2C-.6-11.5 1-11.6 1.7-10.2C2.5-8 1.8-4 0-2Z'],
@@ -16,16 +16,31 @@ const petals = {
 };
 const flowerHeads = new Map();
 
+// Keep the original 420 ms bloom, hold it briefly, then settle to a quiet 14 px mark.
+// Only local flower feedback uses this timer; sorting and folding start immediately.
+export const completionFeedbackDurationMs = 900;
+
 export function flowerMarkup(task) {
   const { variant, tone } = getTaskFlower(task);
   const [count, petal] = petals[variant];
-  const ring = (n, size = 1, offset = 0, inner = false) => Array.from({ length: n }, (_, i) => `<g transform="rotate(${i * 360 / n + offset}) scale(${size})"><path class="flower-petal${inner ? ' flower-inner-petal' : ''}" d="${petal}"/></g>`).join('');
-  if (!flowerHeads.has(variant)) flowerHeads.set(variant, `<g class="flower-petals">${ring(count)}${variant === 'camellia' ? ring(5, .58, 30, true) : variant === 'lily' ? ring(3, .7, 60, true) : ''}</g><circle class="flower-center" r="${variant === 'daisy' ? 2.7 : variant === 'camellia' ? 1.8 : 2.1}"/>`);
+  const ring = (n, size = 1, offset = 0, inner = false) =>
+    Array.from(
+      { length: n },
+      (_, i) =>
+        `<g transform="rotate(${(i * 360) / n + offset}) scale(${size})"><path class="flower-petal${inner ? ' flower-inner-petal' : ''}" d="${petal}"/></g>`,
+    ).join('');
+  if (!flowerHeads.has(variant))
+    flowerHeads.set(
+      variant,
+      `<g class="flower-petals">${ring(count)}${variant === 'camellia' ? ring(5, 0.58, 30, true) : variant === 'lily' ? ring(3, 0.7, 60, true) : ''}</g><circle class="flower-center" r="${variant === 'daisy' ? 2.7 : variant === 'camellia' ? 1.8 : 2.1}"/>`,
+    );
   return `<svg class="completion-flower" data-flower-variant="${variant}" data-flower-tone="${tone}" viewBox="-12 -12 24 24" aria-hidden="true" focusable="false">${flowerHeads.get(variant)}</svg>`;
 }
 
 export function completionMarkup(task, appearance = document.documentElement.dataset.appearance) {
-  return appearance === 'minimal' ? '<span class="completion-check" aria-hidden="true">✓</span>' : flowerMarkup(task);
+  return appearance === 'minimal'
+    ? '<span class="completion-check" aria-hidden="true">✓</span>'
+    : flowerMarkup(task);
 }
 
 export function sproutMarkup(className = '') {
@@ -40,14 +55,21 @@ export function sproutMarkup(className = '') {
 export function createBotanicalEmpty(text, detail = '') {
   const empty = el('div', 'botanical-empty');
   empty.innerHTML = sproutMarkup();
-  const title = el('p'); title.textContent = text; empty.append(title);
-  if (detail) { const hint = el('span'); hint.textContent = detail; empty.append(hint); }
+  const title = el('p');
+  title.textContent = text;
+  empty.append(title);
+  if (detail) {
+    const hint = el('span');
+    hint.textContent = detail;
+    empty.append(hint);
+  }
   return empty;
 }
 
 export function botanicalMotionEnabled(settings) {
-  return settings.appearance === 'botanical' && settings.completionMotion
-    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return (
+    settings.appearance === 'botanical' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
 }
 
 export function markNewShoot(row, settings) {

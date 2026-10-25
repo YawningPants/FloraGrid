@@ -45,3 +45,6 @@ Desktop.ini
 # Test / coverage output
 coverage/
 .nyc_output/
+
+# Local release artifacts (installer, portable archive, hashes)
+release/

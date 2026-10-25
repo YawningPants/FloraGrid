@@ -1,4 +1,10 @@
-import { applyTaskDrop, flattenDragTree, getOriginDropTarget, locateDragSlot, projectTaskDrop } from '../domain/task-drag.mjs';
+import {
+  applyTaskDrop,
+  flattenDragTree,
+  getOriginDropTarget,
+  locateDragSlot,
+  projectTaskDrop,
+} from '../domain/task-drag.mjs';
 import { canMoveTask, findTask } from '../domain/tasks.mjs';
 import { icon } from './icons.mjs';
 
@@ -11,10 +17,12 @@ export function createTaskDragController(config) {
   let session = null;
   const animations = new Map();
   const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const elements = () => [...(config.getTree()?.querySelectorAll(config.rowSelector) || [])]
-    .filter((row) => !row.closest('.task-drag-projection'));
+  const elements = () =>
+    [...(config.getTree()?.querySelectorAll(config.rowSelector) || [])].filter(
+      (row) => !row.closest('.task-drag-projection'),
+    );
   const rowFor = (id) => elements().find((row) => row.dataset.taskId === id);
-  const nodeFor = (row) => config.flat ? row : row.closest('.task-node');
+  const nodeFor = (row) => (config.flat ? row : row.closest('.task-node'));
 
   function cancelAnimations() {
     animations.forEach((animation) => animation.cancel());
@@ -23,7 +31,8 @@ export function createTaskDragController(config) {
 
   function visualRects(includePreview = false) {
     const rows = elements();
-    if (includePreview && session?.preview) rows.push(...session.preview.querySelectorAll(config.rowSelector));
+    if (includePreview && session?.preview)
+      rows.push(...session.preview.querySelectorAll(config.rowSelector));
     if (includePreview && config.flat && session?.preview) rows.push(session.preview);
     return new Map(rows.map((row) => [row.dataset.taskId, row.getBoundingClientRect()]));
   }
@@ -37,14 +46,16 @@ export function createTaskDragController(config) {
       const dx = first.left - last.left;
       const dy = first.top - last.top;
       if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
-      const animation = row.animate([
-        { transform: `translate(${dx}px, ${dy}px)` },
-        { transform: 'translate(0, 0)' },
-      ], { duration: DURATION, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      const animation = row.animate(
+        [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
+        { duration: DURATION, easing: 'cubic-bezier(.2,.8,.2,1)' },
+      );
       animations.set(row, animation);
-      animation.finished.then(() => {
-        if (animations.get(row) === animation) animations.delete(row);
-      }).catch(() => {});
+      animation.finished
+        .then(() => {
+          if (animations.get(row) === animation) animations.delete(row);
+        })
+        .catch(() => {});
     });
   }
 
@@ -52,15 +63,27 @@ export function createTaskDragController(config) {
     const list = config.getList();
     const rect = list.getBoundingClientRect();
     const summary = list.querySelector(':scope > .status-summary');
-    return { left: rect.left, right: rect.right, top: rect.top + (summary?.offsetHeight || 0), bottom: rect.bottom };
+    return {
+      left: rect.left,
+      right: rect.right,
+      top: rect.top + (summary?.offsetHeight || 0),
+      bottom: rect.bottom,
+    };
   }
 
   function measure() {
     const list = config.getList();
     const listRect = list.getBoundingClientRect();
-    const toContent = (rect) => ({ top: rect.top - listRect.top + list.scrollTop, bottom: rect.bottom - listRect.top + list.scrollTop });
+    const toContent = (rect) => ({
+      top: rect.top - listRect.top + list.scrollTop,
+      bottom: rect.bottom - listRect.top + list.scrollTop,
+    });
     const nodes = new Map(elements().map((row) => [row.dataset.taskId, row]));
-    session.rows = flattenDragTree(session.items, { ...session.options, excludedId: session.taskId, expandedIds: session.expandedIds })
+    session.rows = flattenDragTree(session.items, {
+      ...session.options,
+      excludedId: session.taskId,
+      expandedIds: session.expandedIds,
+    })
       .filter((entry) => nodes.has(entry.id))
       .map((entry) => ({ ...entry, ...toContent(nodes.get(entry.id).getBoundingClientRect()) }));
     session.previewRect = toContent(session.preview.getBoundingClientRect());
@@ -122,7 +145,12 @@ export function createTaskDragController(config) {
     origin.classList.add('task-drag-origin');
     origin.inert = true;
     origin.setAttribute('aria-hidden', 'true');
-    Object.assign(origin.style, { left: `${sourceRect.left}px`, top: `${sourceRect.top}px`, width: `${sourceRect.width}px`, height: `${sourceRect.height}px` });
+    Object.assign(origin.style, {
+      left: `${sourceRect.left}px`,
+      top: `${sourceRect.top}px`,
+      width: `${sourceRect.width}px`,
+      height: `${sourceRect.height}px`,
+    });
     document.body.append(origin);
     session.origin = origin;
 
@@ -130,13 +158,15 @@ export function createTaskDragController(config) {
     indicator.className = 'task-drag-indicator';
     indicator.setAttribute('aria-hidden', 'true');
     indicator.innerHTML = icon('move');
-    const title = document.createElement('span'); title.className = 'task-drag-title';
+    const title = document.createElement('span');
+    title.className = 'task-drag-title';
     title.textContent = findTask(session.items, session.taskId)?.title || '未命名任务';
     indicator.append(title);
     const count = countDescendants(findTask(session.items, session.taskId));
     if (count) {
       const badge = document.createElement('span');
-      badge.textContent = `${count + 1} 项`; indicator.append(badge);
+      badge.textContent = `${count + 1} 项`;
+      indicator.append(badge);
     }
     document.body.append(indicator);
     session.indicator = indicator;
@@ -155,13 +185,16 @@ export function createTaskDragController(config) {
     const badgeX = Math.max(6, Math.min(point.x + 16, innerWidth - session.indicatorWidth - 6));
     const badgeY = point.y + 38 < innerHeight ? point.y + 15 : point.y - 30;
     session.indicator.style.transform = `translate3d(${badgeX}px, ${badgeY}px, 0)`;
-    const inside = point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom;
+    const inside =
+      point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom;
     let target = null;
     if (inside) {
       const list = config.getList();
       const y = point.y - list.getBoundingClientRect().top + list.scrollTop;
       const slot = locateDragSlot(session.rows, y, session.previewRect, session.target);
-      const depth = config.flat ? 0 : Math.max(0, session.originDepth + Math.trunc((point.x - session.startX) / INDENT_DISTANCE));
+      const depth = config.flat
+        ? 0
+        : Math.max(0, session.originDepth + Math.trunc((point.x - session.startX) / INDENT_DISTANCE));
       target = projectTaskDrop(session.items, session.taskId, session.rows, slot, depth, session.options);
       if (target && targetKey(target) !== targetKey(session.target)) renderProjection(target);
     }
@@ -191,7 +224,10 @@ export function createTaskDragController(config) {
   function move(event) {
     if (!session || event.pointerId !== session.pointerId) return;
     session.point = { x: event.clientX, y: event.clientY };
-    if (!session.dragging && Math.hypot(event.clientX - session.startX, event.clientY - session.startY) >= INTENT_DISTANCE) {
+    if (
+      !session.dragging &&
+      Math.hypot(event.clientX - session.startX, event.clientY - session.startY) >= INTENT_DISTANCE
+    ) {
       begin();
       session.frame = window.requestAnimationFrame(frame);
     }
@@ -230,7 +266,8 @@ export function createTaskDragController(config) {
     session = null;
     unbind();
     document.body.classList.remove('is-task-dragging', 'is-task-drop-invalid');
-    if (config.root.hasPointerCapture?.(current.pointerId)) config.root.releasePointerCapture(current.pointerId);
+    if (config.root.hasPointerCapture?.(current.pointerId))
+      config.root.releasePointerCapture(current.pointerId);
 
     if (commit && current.dragging && current.valid) {
       const result = applyTaskDrop(config.getItems(), current.taskId, current.target, current.options);
@@ -240,7 +277,10 @@ export function createTaskDragController(config) {
     }
     if (current.dragging) {
       animateFrom(before);
-      const swallow = (click) => { click.preventDefault(); click.stopPropagation(); };
+      const swallow = (click) => {
+        click.preventDefault();
+        click.stopPropagation();
+      };
       window.addEventListener('click', swallow, { capture: true, once: true });
       window.setTimeout(() => window.removeEventListener('click', swallow, true), 50);
     }
@@ -271,7 +311,9 @@ export function createTaskDragController(config) {
   }
 
   return {
-    get active() { return Boolean(session); },
+    get active() {
+      return Boolean(session);
+    },
     start(event, taskId, row) {
       if (event.button !== 0 || session || config.canStart?.() === false) return;
       const options = { ...config.getOptions?.(), flat: Boolean(config.flat) };
@@ -281,10 +323,20 @@ export function createTaskDragController(config) {
       if (!task || !target || !canMoveTask(task, options.searchQuery || '')) return;
       event.preventDefault();
       session = {
-        taskId, items, options, target, originDepth: target.depth, sourceRow: row,
-        pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
-        point: { x: event.clientX, y: event.clientY }, dragging: false,
-        expandedIds: new Set(), expandedContainers: [], createdContainers: new Set(),
+        taskId,
+        items,
+        options,
+        target,
+        originDepth: target.depth,
+        sourceRow: row,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        point: { x: event.clientX, y: event.clientY },
+        dragging: false,
+        expandedIds: new Set(),
+        expandedContainers: [],
+        createdContainers: new Set(),
       };
       window.addEventListener('pointermove', move, { capture: true, passive: false });
       window.addEventListener('pointerup', up, true);
@@ -296,7 +348,9 @@ export function createTaskDragController(config) {
       config.root.addEventListener('lostpointercapture', abort);
       config.root.setPointerCapture?.(event.pointerId);
     },
-    cancel() { finish(null, false); },
+    cancel() {
+      finish(null, false);
+    },
   };
 }
 

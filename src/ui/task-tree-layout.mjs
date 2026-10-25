@@ -38,25 +38,10 @@ export function applyTagLineReserve(root) {
 }
 
 export function applyTreeBranchLayout(root, { containers = null } = {}) {
-  const botanical = document.documentElement.dataset.appearance === 'botanical';
-  const layouts = [...(containers || root?.querySelectorAll('.children') || [])].filter(children => children.isConnected).map((children) => {
-    if (botanical) return { children, plant: measureTaskPlant(children) };
-    const lastNode = children.querySelector(':scope > .task-node:last-child');
-    const lastBranch = lastNode?.querySelector(':scope > .tree-branch');
-    if (!lastBranch) {
-      return { children, offset: null };
-    }
-    const childrenRect = children.getBoundingClientRect();
-    const branchRect = lastBranch.getBoundingClientRect();
-    const offset = Math.max(0, Math.round(branchRect.top - childrenRect.top + 20));
-    return { children, offset, plant: measureTaskPlant(children) };
-  });
-  layouts.forEach(({ children, offset, plant }) => {
-    if (botanical) { paintTaskPlant(plant); return; }
-    if (offset === null) children.style.removeProperty('--last-branch-y');
-    else if (children.style.getPropertyValue('--last-branch-y') !== `${offset}px`) children.style.setProperty('--last-branch-y', `${offset}px`);
-    paintTaskPlant(plant);
-  });
+  const layouts = [...(containers || root?.querySelectorAll('.children') || [])]
+    .filter((children) => children.isConnected)
+    .map(measureTaskPlant);
+  layouts.forEach(paintTaskPlant);
 }
 
 function getTagChipRows(list) {
@@ -96,9 +81,9 @@ function getInheritedMarkerExpansionWidth(chip) {
   }
   const style = getComputedStyle(marker);
   return (
-    Number.parseFloat(style.width)
-    + Number.parseFloat(style.paddingLeft)
-    + Number.parseFloat(style.paddingRight)
-    + 2
+    Number.parseFloat(style.width) +
+    Number.parseFloat(style.paddingLeft) +
+    Number.parseFloat(style.paddingRight) +
+    2
   );
 }

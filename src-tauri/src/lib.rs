@@ -7,9 +7,11 @@ use tauri::{
 };
 use tauri_plugin_dialog::DialogExt;
 
-mod window_placement;
 mod calendar_data;
+mod data_archive;
+mod data_transfer;
 mod day_window_handoff;
+mod window_placement;
 use window_placement::{place_adjacent, Placement, Rect, Side, Size};
 
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -97,6 +99,7 @@ pub fn run() {
         .manage(DayWindowOperation::default())
         .manage(day_window_handoff::DayWindowHandoffs::default())
         .manage(calendar_data::CalendarDataLock::default())
+        .manage(data_transfer::TransferReceipts::default())
         .manage(SettingsWindowState::default())
         .manage(CalendarNavigation::default())
         .plugin(tauri_plugin_opener::init())
@@ -123,7 +126,12 @@ pub fn run() {
             open_day_window,
             claim_day_window_date,
             complete_day_window_handoff,
-            exit_app
+            exit_app,
+            data_transfer::inspect_storage_target,
+            data_transfer::preview_backup_file,
+            data_transfer::pick_backup_path,
+            data_transfer::perform_data_transfer,
+            data_transfer::complete_data_transfer
         ])
         .setup(|app| {
             let menu = MenuBuilder::new(app)
@@ -204,7 +212,9 @@ async fn open_month_window(
 ) -> Result<(), String> {
     let intent = panel.map(|panel| serde_json::json!({"panel":panel,"ruleId":rule_id}));
     if let Some(window) = app.get_webview_window(MONTH_WINDOW_LABEL) {
-        if let Some(ref intent) = intent { post_calendar_navigation(&app, MONTH_WINDOW_LABEL, intent.clone())?; }
+        if let Some(ref intent) = intent {
+            post_calendar_navigation(&app, MONTH_WINDOW_LABEL, intent.clone())?;
+        }
         window.show().map_err(|error| error.to_string())?;
         window.unminimize().map_err(|error| error.to_string())?;
         window.set_focus().map_err(|error| error.to_string())?;
@@ -229,7 +239,9 @@ async fn open_month_window(
     .build()
     .map_err(|error| format!("Failed to open month window: {}", error))?;
 
-    if let Some(intent) = intent { post_calendar_navigation(&app, MONTH_WINDOW_LABEL, intent)?; }
+    if let Some(intent) = intent {
+        post_calendar_navigation(&app, MONTH_WINDOW_LABEL, intent)?;
+    }
     show_new_window(&window, plan)
 }
 
@@ -246,7 +258,10 @@ async fn open_settings_window(
 async fn get_settings_navigation(
     state: tauri::State<'_, SettingsWindowState>,
 ) -> Result<SettingsNavigation, String> {
-    state.0.lock().map(|navigation| navigation.clone())
+    state
+        .0
+        .lock()
+        .map(|navigation| navigation.clone())
         .map_err(|error| error.to_string())
 }
 
@@ -272,7 +287,8 @@ fn open_settings_window_inner(
         };
         drop(navigation);
         if let Some(request) = request {
-            window.emit("calendar://settings-navigate", request)
+            window
+                .emit("calendar://settings-navigate", request)
                 .map_err(|error| error.to_string())?;
         }
         window.show().map_err(|error| error.to_string())?;
@@ -289,21 +305,18 @@ fn open_settings_window_inner(
     };
     let plan = plan_window(caller, (780.0, 560.0), (560.0, 420.0), None, 0);
     let (width, height) = planned_size(&plan, (780.0, 560.0));
-    let window = WebviewWindowBuilder::new(
-        app,
-        SETTINGS_WINDOW_LABEL,
-        WebviewUrl::App(route.into()),
-    )
-    .title("日枝 · 设置")
-    .inner_size(width, height)
-    .min_inner_size(560.0, 420.0)
-    .transparent(true)
-    .decorations(false)
-    .resizable(true)
-    .maximizable(false)
-    .visible(false)
-    .build()
-    .map_err(|error| format!("Failed to open settings window: {}", error))?;
+    let window =
+        WebviewWindowBuilder::new(app, SETTINGS_WINDOW_LABEL, WebviewUrl::App(route.into()))
+            .title("日枝 · 设置")
+            .inner_size(width, height)
+            .min_inner_size(560.0, 420.0)
+            .transparent(true)
+            .decorations(false)
+            .resizable(true)
+            .maximizable(false)
+            .visible(false)
+            .build()
+            .map_err(|error| format!("Failed to open settings window: {}", error))?;
 
     drop(navigation);
     show_new_window(&window, plan)
@@ -376,7 +389,11 @@ async fn open_day_window(
 }
 
 #[tauri::command]
-async fn claim_day_window_date(window: tauri::WebviewWindow, date: String, take_over: Option<bool>) -> Result<bool, String> {
+async fn claim_day_window_date(
+    window: tauri::WebviewWindow,
+    date: String,
+    take_over: Option<bool>,
+) -> Result<bool, String> {
     validate_date(&date)?;
     let app = window.app_handle();
     let label = window.label().to_string();
@@ -402,20 +419,30 @@ async fn claim_day_window_date(window: tauri::WebviewWindow, date: String, take_
         if let Some(existing) = app.get_webview_window(existing_label) {
             let request = prepare_day_window_handoff(&existing).await?;
             if app.get_webview_window(&label).is_none() {
-                let _ = existing.emit("calendar://day-handoff-cancelled", serde_json::json!({"id":request}));
+                let _ = existing.emit(
+                    "calendar://day-handoff-cancelled",
+                    serde_json::json!({"id":request}),
+                );
                 return Err("当前日视图已关闭".into());
             }
             if let Err(error) = existing.hide() {
-                let _ = existing.emit("calendar://day-handoff-cancelled", serde_json::json!({"id":request}));
+                let _ = existing.emit(
+                    "calendar://day-handoff-cancelled",
+                    serde_json::json!({"id":request}),
+                );
                 return Err(error.to_string());
             }
-            if existing_label != MAIN_WINDOW_LABEL { let _ = existing.close(); }
+            if existing_label != MAIN_WINDOW_LABEL {
+                let _ = existing.close();
+            }
         }
     }
 
     let state = app.state::<DayWindowDates>();
     let mut dates = state.0.lock().map_err(|error| error.to_string())?;
-    if let Some(existing_label) = existing_label { dates.remove(&existing_label); }
+    if let Some(existing_label) = existing_label {
+        dates.remove(&existing_label);
+    }
     let title = format!("日枝 · 日视图 {}", date);
     dates.insert(label, date);
     drop(dates);
@@ -424,39 +451,70 @@ async fn claim_day_window_date(window: tauri::WebviewWindow, date: String, take_
 }
 
 async fn prepare_day_window_handoff(window: &tauri::WebviewWindow) -> Result<String, String> {
-    let state = window.app_handle().state::<day_window_handoff::DayWindowHandoffs>();
+    let state = window
+        .app_handle()
+        .state::<day_window_handoff::DayWindowHandoffs>();
     let (id, receive) = state.begin(window.label())?;
-    if let Err(error) = window.emit("calendar://day-handoff-requested", serde_json::json!({"id":id})) {
+    if let Err(error) = window.emit(
+        "calendar://day-handoff-requested",
+        serde_json::json!({"id":id}),
+    ) {
         state.cancel(&id);
         return Err(error.to_string());
     }
     let result = tauri::async_runtime::spawn_blocking(move || {
-        receive.recv_timeout(std::time::Duration::from_secs(8))
+        receive
+            .recv_timeout(std::time::Duration::from_secs(8))
             .map_err(|_| "另一个日视图未完成保存，请重试".to_string())?
-    }).await.map_err(|e| e.to_string()).and_then(|saved| saved);
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|saved| saved);
     state.cancel(&id);
-    if result.is_err() { let _ = window.emit("calendar://day-handoff-cancelled", serde_json::json!({"id":id})); }
+    if result.is_err() {
+        let _ = window.emit(
+            "calendar://day-handoff-cancelled",
+            serde_json::json!({"id":id}),
+        );
+    }
     result.map(|_| id)
 }
 
 #[tauri::command]
-async fn complete_day_window_handoff(window: tauri::WebviewWindow, id: String, error: Option<String>) -> Result<(), String> {
-    window.app_handle().state::<day_window_handoff::DayWindowHandoffs>().finish(window.label(), &id, error)
+async fn complete_day_window_handoff(
+    window: tauri::WebviewWindow,
+    id: String,
+    error: Option<String>,
+) -> Result<(), String> {
+    window
+        .app_handle()
+        .state::<day_window_handoff::DayWindowHandoffs>()
+        .finish(window.label(), &id, error)
 }
 
-fn post_calendar_navigation(app: &tauri::AppHandle, label: &str, mut intent: serde_json::Value) -> Result<(), String> {
+fn post_calendar_navigation(
+    app: &tauri::AppHandle,
+    label: &str,
+    mut intent: serde_json::Value,
+) -> Result<(), String> {
     let state = app.state::<CalendarNavigation>();
     let mut navigation = state.0.lock().map_err(|e| e.to_string())?;
     navigation.0 += 1;
     intent["revision"] = serde_json::json!(navigation.0);
     navigation.1.insert(label.into(), intent.clone());
     drop(navigation);
-    if let Some(window) = app.get_webview_window(label) { window.emit("calendar://navigate", intent).map_err(|e| e.to_string())?; }
+    if let Some(window) = app.get_webview_window(label) {
+        window
+            .emit("calendar://navigate", intent)
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
 #[tauri::command]
-async fn get_calendar_navigation(window: tauri::WebviewWindow) -> Result<Option<serde_json::Value>, String> {
+async fn get_calendar_navigation(
+    window: tauri::WebviewWindow,
+) -> Result<Option<serde_json::Value>, String> {
     let state = window.app_handle().state::<CalendarNavigation>();
     let navigation = state.0.lock().map_err(|e| e.to_string())?;
     Ok(navigation.1.get(window.label()).cloned())
@@ -611,7 +669,12 @@ async fn load_day(app: tauri::AppHandle, date: String) -> Result<Option<DayData>
 }
 
 #[tauri::command]
-async fn save_day(app: tauri::AppHandle, day: DayData, base_reminder_ids: Option<Vec<String>>, today: Option<String>) -> Result<DayData, String> {
+async fn save_day(
+    app: tauri::AppHandle,
+    day: DayData,
+    base_reminder_ids: Option<Vec<String>>,
+    today: Option<String>,
+) -> Result<DayData, String> {
     let today = today.unwrap_or_else(|| day.date.clone());
     validate_date(&today)?;
     calendar_data::save_day_locked(&app, day, base_reminder_ids.unwrap_or_default(), &today)
@@ -619,6 +682,9 @@ async fn save_day(app: tauri::AppHandle, day: DayData, base_reminder_ids: Option
 
 #[tauri::command]
 fn load_tag_templates(app: tauri::AppHandle) -> Result<Option<TagTemplates>, String> {
+    let lock = app.state::<calendar_data::CalendarDataLock>();
+    let _guard = lock.0.lock().map_err(|e| e.to_string())?;
+    calendar_data::recover(&app)?;
     let path = tag_templates_file_path(&app)?;
     if !path.exists() {
         return Ok(None);
@@ -633,6 +699,9 @@ fn load_tag_templates(app: tauri::AppHandle) -> Result<Option<TagTemplates>, Str
 
 #[tauri::command]
 fn save_tag_templates(app: tauri::AppHandle, mut templates: TagTemplates) -> Result<(), String> {
+    let lock = app.state::<calendar_data::CalendarDataLock>();
+    let _guard = lock.0.lock().map_err(|e| e.to_string())?;
+    calendar_data::recover(&app)?;
     let path = tag_templates_file_path(&app)?;
     let parent = path
         .parent()
@@ -650,6 +719,9 @@ fn save_tag_templates(app: tauri::AppHandle, mut templates: TagTemplates) -> Res
 
 #[tauri::command]
 fn load_long_tasks(app: tauri::AppHandle) -> Result<Option<LongTasks>, String> {
+    let lock = app.state::<calendar_data::CalendarDataLock>();
+    let _guard = lock.0.lock().map_err(|e| e.to_string())?;
+    calendar_data::recover(&app)?;
     let path = long_tasks_file_path(&app)?;
     if !path.exists() {
         return Ok(None);
@@ -664,6 +736,9 @@ fn load_long_tasks(app: tauri::AppHandle) -> Result<Option<LongTasks>, String> {
 
 #[tauri::command]
 fn save_long_tasks(app: tauri::AppHandle, mut tasks: LongTasks) -> Result<(), String> {
+    let lock = app.state::<calendar_data::CalendarDataLock>();
+    let _guard = lock.0.lock().map_err(|e| e.to_string())?;
+    calendar_data::recover(&app)?;
     let path = long_tasks_file_path(&app)?;
     let parent = path
         .parent()
@@ -684,7 +759,10 @@ fn load_storage_location(app: tauri::AppHandle) -> Result<StorageLocation, Strin
 }
 
 #[tauri::command]
-async fn set_storage_location(app: tauri::AppHandle, path: String) -> Result<StorageLocation, String> {
+async fn set_storage_location(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<StorageLocation, String> {
     let path = PathBuf::from(path);
     if !path.exists() {
         return Err("Selected data folder does not exist".to_string());
@@ -811,7 +889,10 @@ fn write_storage_settings(app: &tauri::AppHandle, settings: StorageSettings) -> 
         .map_err(|error| format!("Failed to create storage settings directory: {}", error))?;
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|error| format!("Failed to serialize storage settings: {}", error))?;
-    fs::write(&path, content).map_err(|error| format!("Failed to save storage settings: {}", error))
+    data_archive::atomic_value(
+        &path,
+        &serde_json::from_str(&content).map_err(|error| error.to_string())?,
+    )
 }
 
 fn path_to_string(path: PathBuf) -> Result<String, String> {

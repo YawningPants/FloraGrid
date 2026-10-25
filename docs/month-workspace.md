@@ -37,7 +37,7 @@
 
 生成按规则 ID 与公历发生日期去重。后台为提醒事务和日任务保存共用一把锁，生成计划同时检查规则版本和日文件版本；旧窗口的延迟保存会合并新增提醒，不能复活已经撤销的未来自动任务。事务先写恢复日志，再原子替换数据文件；异常中断后重放未完成事务。
 
-备份时关闭应用并复制整个当前数据目录。如果出现 `reminder-transaction.json`，将它一起保留，它是自动恢复用的事务日志。
+推荐从“设置 → 数据”导出完整备份，也可关闭应用后手动复制整个当前数据目录。如果出现 `reminder-transaction.json`，将它一起保留，它是自动恢复用的事务日志。
 
 农历使用运行时内置 Chinese Calendar 的 `Intl.DateTimeFormat.formatToParts`，无需联网。参考：[ECMAScript 国际化接口说明](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DateTimeFormat/formatToParts)、[Unicode CLDR 日期规则](https://www.unicode.org/reports/tr35/tr35-dates.html)。
 

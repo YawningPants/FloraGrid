@@ -67,7 +67,11 @@ export function normalizeTaskTree(items) {
 }
 
 export function sortByStatus(items) {
-  return [...items].sort((a, b) => taskStatusMeta[a.status].order - taskStatusMeta[b.status].order || Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
+  return [...items].sort(
+    (a, b) =>
+      taskStatusMeta[a.status].order - taskStatusMeta[b.status].order ||
+      Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)),
+  );
 }
 
 export function getRenderableTasks(items, showDeletedTasks) {
@@ -110,6 +114,29 @@ export function hasDescendant(task, descendantId) {
 
 export function hasActiveDescendant(task) {
   return (task.children || []).some((child) => child.status === 'active' || hasActiveDescendant(child));
+}
+
+// Reopening one descendant invalidates completion all the way to the root.
+// Failed/deleted ancestors keep their explicit result; only completion is inherited here.
+export function reopenCompletedAncestors(items, taskId) {
+  const ancestors = [];
+  function visit(tasks) {
+    for (const task of tasks) {
+      if (task.id === taskId) return true;
+      ancestors.push(task);
+      if (visit(task.children || [])) return true;
+      ancestors.pop();
+    }
+    return false;
+  }
+  if (!visit(items)) return [];
+  const reopened = [];
+  for (let i = ancestors.length - 1; i >= 0; i--)
+    if (ancestors[i].status === 'completed') {
+      ancestors[i].status = 'active';
+      reopened.push(ancestors[i]);
+    }
+  return reopened;
 }
 
 export function failActiveDescendants(task) {

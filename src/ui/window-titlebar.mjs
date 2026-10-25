@@ -31,8 +31,12 @@ export function createWindowTitleBar({
   pinButton?.addEventListener('click', async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
-    try { await pin?.onToggle?.(button); }
-    finally { button.disabled = false; titleBar.classList.toggle('is-pinned', button.classList.contains('is-active')); }
+    try {
+      await pin?.onToggle?.(button);
+    } finally {
+      button.disabled = false;
+      titleBar.classList.toggle('is-pinned', button.classList.contains('is-active'));
+    }
   });
 
   titleBar.querySelector('.minimize')?.addEventListener('click', () => {

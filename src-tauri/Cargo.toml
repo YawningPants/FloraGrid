@@ -2,7 +2,7 @@
 name = "desktop-calendar"
 version = "1.0.0"
 description = "日枝 FloraGrid：本地桌面日程、树状任务与公农历提醒。"
-authors = ["you"]
+authors = ["YawningPants"]
 edition = "2021"
 
 [lib]

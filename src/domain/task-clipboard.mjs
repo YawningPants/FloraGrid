@@ -46,6 +46,7 @@ function cloneTaskWithNewIds(task) {
   const copy = structuredClone(task);
   delete copy.reminder;
   delete copy.flower;
+  delete copy.completedAt;
   return {
     ...copy,
     id: `task-${crypto.randomUUID()}`,

@@ -13,7 +13,12 @@ export function createTagManagerSort({ root, scroller, onCommit, canStart = () =
     const rect = item.getBoundingClientRect();
     const transform = getComputedStyle(item).transform;
     const matrix = transform === 'none' ? null : new DOMMatrixReadOnly(transform);
-    return new DOMRect(rect.left - (matrix?.m41 || 0), rect.top - (matrix?.m42 || 0), rect.width, rect.height);
+    return new DOMRect(
+      rect.left - (matrix?.m41 || 0),
+      rect.top - (matrix?.m42 || 0),
+      rect.width,
+      rect.height,
+    );
   }
 
   function cancel() {
@@ -36,11 +41,15 @@ export function createTagManagerSort({ root, scroller, onCommit, canStart = () =
     state.preview?.remove();
     state.ghost?.remove();
     document.body.classList.remove('is-tag-sorting');
-    if (captureTarget.hasPointerCapture(state.pointerId)) captureTarget.releasePointerCapture(state.pointerId);
+    if (captureTarget.hasPointerCapture(state.pointerId))
+      captureTarget.releasePointerCapture(state.pointerId);
   }
 
   function activate() {
-    if (!drag || !drag.item.isConnected || !canStart()) { cancel(); return; }
+    if (!drag || !drag.item.isConnected || !canStart()) {
+      cancel();
+      return;
+    }
     // Keep the pressed node in place; only the inert result preview is reordered.
     captureTarget.setPointerCapture(drag.pointerId);
     suppressPointerClick = true;
@@ -68,14 +77,20 @@ export function createTagManagerSort({ root, scroller, onCommit, canStart = () =
 
   function move(event) {
     if (!drag || event.pointerId !== drag.pointerId) return;
-    if (!(event.buttons & 1)) { cancel(); return; }
+    if (!(event.buttons & 1)) {
+      cancel();
+      return;
+    }
     drag.x = event.clientX;
     drag.y = event.clientY;
     if (!drag.ghost) {
       const distance = Math.hypot(drag.x - drag.startX, drag.y - drag.startY);
       if (drag.longPress) {
         // Moving before the hold completes cancels the gesture, rather than editing on release.
-        if (distance > 6) { suppressPointerClick = true; cancel(); }
+        if (distance > 6) {
+          suppressPointerClick = true;
+          cancel();
+        }
         return;
       }
       if (distance < 5) return;
@@ -93,19 +108,35 @@ export function createTagManagerSort({ root, scroller, onCommit, canStart = () =
     state.ghost.style.top = `${state.y - state.offsetY}px`;
     const bounds = state.list.getBoundingClientRect();
     const view = scroller.getBoundingClientRect();
-    state.valid = state.x >= bounds.left && state.x <= bounds.right && state.y >= Math.max(view.top, bounds.top) - 8 && state.y <= Math.min(view.bottom, bounds.bottom) + 8;
+    state.valid =
+      state.x >= bounds.left &&
+      state.x <= bounds.right &&
+      state.y >= Math.max(view.top, bounds.top) - 8 &&
+      state.y <= Math.min(view.bottom, bounds.bottom) + 8;
     if (!state.valid) return;
     const source = layoutRect(state.preview);
-    if (state.x >= source.left && state.x <= source.right && state.y >= source.top && state.y <= source.bottom) return;
+    if (
+      state.x >= source.left &&
+      state.x <= source.right &&
+      state.y >= source.top &&
+      state.y <= source.bottom
+    )
+      return;
     const others = state.order.filter((item) => item !== state.item);
-    const distance = (rect) => Math.hypot(Math.max(rect.left - state.x, 0, state.x - rect.right), Math.max(rect.top - state.y, 0, state.y - rect.bottom));
-    const target = others.map((item) => ({ item, rect: layoutRect(item) }))
+    const distance = (rect) =>
+      Math.hypot(
+        Math.max(rect.left - state.x, 0, state.x - rect.right),
+        Math.max(rect.top - state.y, 0, state.y - rect.bottom),
+      );
+    const target = others
+      .map((item) => ({ item, rect: layoutRect(item) }))
       .sort((a, b) => distance(a.rect) - distance(b.rect))[0];
     if (!target) return;
     const { item, rect } = target;
-    const after = state.type === 'group' || state.y < rect.top || state.y > rect.bottom
-      ? state.y > rect.top + rect.height / 2
-      : state.x > rect.left + rect.width / 2;
+    const after =
+      state.type === 'group' || state.y < rect.top || state.y > rect.bottom
+        ? state.y > rect.top + rect.height / 2
+        : state.x > rect.left + rect.width / 2;
     const next = after ? item.nextElementSibling : item;
     const nextVisible = next === state.item ? state.item.nextElementSibling : next;
     if (nextVisible === state.preview || state.preview.nextElementSibling === nextVisible) return;
@@ -116,7 +147,13 @@ export function createTagManagerSort({ root, scroller, onCommit, canStart = () =
         const before = positions.get(node);
         node.getAnimations().forEach((animation) => animation.cancel());
         const now = node.getBoundingClientRect();
-        node.animate([{ transform: `translate(${before.left - now.left}px, ${before.top - now.top}px)` }, { transform: 'none' }], { duration: 150, easing: 'ease-out' });
+        node.animate(
+          [
+            { transform: `translate(${before.left - now.left}px, ${before.top - now.top}px)` },
+            { transform: 'none' },
+          ],
+          { duration: 150, easing: 'ease-out' },
+        );
       });
     }
   }
@@ -125,78 +162,151 @@ export function createTagManagerSort({ root, scroller, onCommit, canStart = () =
     if (!drag?.ghost) return;
     const rect = scroller.getBoundingClientRect();
     const delta = drag.y < rect.top + 30 ? -7 : drag.y > rect.bottom - 30 ? 7 : 0;
-    if (delta) { scroller.scrollTop += delta; project(); }
+    if (delta) {
+      scroller.scrollTop += delta;
+      project();
+    }
     frame = requestAnimationFrame(tick);
   }
 
-  root.addEventListener('pointerdown', (event) => {
-    if (!event.isPrimary || drag) return;
-    suppressPointerClick = false;
-    const handle = event.target.closest('[data-sort-handle], [data-sort-press]');
-    if (!handle || event.button !== 0 || !canStart()) return;
-    const item = handle.closest('[data-sort-id]');
-    const list = item.parentElement;
-    const longPress = handle.hasAttribute('data-sort-press');
-    if (!longPress) {
-      event.preventDefault();
-      captureTarget.setPointerCapture(event.pointerId);
-    }
-    drag = { handle, item, list, longPress, startScrollTop: scroller.scrollTop, type: list.dataset.sortType, order: [...list.children], pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY };
-    if (longPress) pressTimer = setTimeout(activate, 350);
-  }, options);
+  root.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (!event.isPrimary || drag) return;
+      suppressPointerClick = false;
+      const handle = event.target.closest('[data-sort-handle], [data-sort-press]');
+      if (!handle || event.button !== 0 || !canStart()) return;
+      const item = handle.closest('[data-sort-id]');
+      const list = item.parentElement;
+      const longPress = handle.hasAttribute('data-sort-press');
+      if (!longPress) {
+        event.preventDefault();
+        captureTarget.setPointerCapture(event.pointerId);
+      }
+      drag = {
+        handle,
+        item,
+        list,
+        longPress,
+        startScrollTop: scroller.scrollTop,
+        type: list.dataset.sortType,
+        order: [...list.children],
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        x: event.clientX,
+        y: event.clientY,
+      };
+      if (longPress) pressTimer = setTimeout(activate, 350);
+    },
+    options,
+  );
   // Listen on window before capture so releasing outside also clears a pending hold.
   window.addEventListener('pointermove', move, { ...options, capture: true, passive: false });
-  window.addEventListener('pointerup', (event) => {
-    if (!drag || event.pointerId !== drag.pointerId) return;
-    if (!drag.ghost) { cleanup(); return; }
-    if (drag.ghost) {
-      drag.x = event.clientX;
-      drag.y = event.clientY;
-      project();
-    }
-    const state = drag;
-    const ids = [...state.list.children].filter((item) => item !== state.item).map((item) => item.dataset.sortId);
-    const changed = state.ghost && state.valid && ids.some((id, index) => id !== state.order[index].dataset.sortId);
-    if (!changed) { cancel(); return; }
-    state.order.forEach((item) => item.getAnimations().forEach((animation) => animation.cancel()));
-    cleanup();
-    const byId = new Map(state.order.map((item) => [item.dataset.sortId, item]));
-    ids.forEach((id) => state.list.append(byId.get(id)));
-    onCommit(state.type, state.list.dataset.groupId, ids);
-  }, options);
-  window.addEventListener('lostpointercapture', (event) => {
-    // Capture may end while the button is still down; keep window tracking until release.
-    if (drag?.ghost && event.pointerId === drag.pointerId && !(event.buttons & 1)) cancel();
-  }, options);
+  window.addEventListener(
+    'pointerup',
+    (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      if (!drag.ghost) {
+        cleanup();
+        return;
+      }
+      if (drag.ghost) {
+        drag.x = event.clientX;
+        drag.y = event.clientY;
+        project();
+      }
+      const state = drag;
+      const ids = [...state.list.children]
+        .filter((item) => item !== state.item)
+        .map((item) => item.dataset.sortId);
+      const changed =
+        state.ghost && state.valid && ids.some((id, index) => id !== state.order[index].dataset.sortId);
+      if (!changed) {
+        cancel();
+        return;
+      }
+      state.order.forEach((item) => item.getAnimations().forEach((animation) => animation.cancel()));
+      cleanup();
+      const byId = new Map(state.order.map((item) => [item.dataset.sortId, item]));
+      ids.forEach((id) => state.list.append(byId.get(id)));
+      onCommit(state.type, state.list.dataset.groupId, ids);
+    },
+    options,
+  );
+  window.addEventListener(
+    'lostpointercapture',
+    (event) => {
+      // Capture may end while the button is still down; keep window tracking until release.
+      if (drag?.ghost && event.pointerId === drag.pointerId && !(event.buttons & 1)) cancel();
+    },
+    options,
+  );
   window.addEventListener('pointercancel', cancel, options);
   window.addEventListener('blur', cancel, options);
-  scroller.addEventListener('scroll', () => {
-    if (drag?.longPress && !drag.ghost && scroller.scrollTop !== drag.startScrollTop) cancel();
-  }, options);
-  root.addEventListener('click', (event) => {
-    if (!suppressPointerClick || event.detail === 0) return;
-    suppressPointerClick = false;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }, { ...options, capture: true });
-  root.addEventListener('contextmenu', (event) => {
-    if (drag?.longPress) event.preventDefault();
-  }, options);
-  root.addEventListener('dragstart', (event) => {
-    if (event.target.closest('[data-sort-press]')) event.preventDefault();
-  }, options);
-  root.addEventListener('keydown', (event) => {
-    const handle = event.target.closest('[data-sort-handle], [data-sort-press]');
-    if (!handle || !event.altKey || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) || !canStart()) return;
-    event.preventDefault();
-    const item = handle.closest('[data-sort-id]');
-    const list = item.parentElement;
-    const items = [...list.children];
-    const from = items.indexOf(item);
-    const to = from + (['ArrowUp', 'ArrowLeft'].includes(event.key) ? -1 : 1);
-    if (!items[to]) return;
-    [items[from], items[to]] = [items[to], items[from]];
-    onCommit(list.dataset.sortType, list.dataset.groupId, items.map((node) => node.dataset.sortId));
-  }, options);
-  return { cancel, destroy() { cancel(); abort.abort(); } };
+  scroller.addEventListener(
+    'scroll',
+    () => {
+      if (drag?.longPress && !drag.ghost && scroller.scrollTop !== drag.startScrollTop) cancel();
+    },
+    options,
+  );
+  root.addEventListener(
+    'click',
+    (event) => {
+      if (!suppressPointerClick || event.detail === 0) return;
+      suppressPointerClick = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    },
+    { ...options, capture: true },
+  );
+  root.addEventListener(
+    'contextmenu',
+    (event) => {
+      if (drag?.longPress) event.preventDefault();
+    },
+    options,
+  );
+  root.addEventListener(
+    'dragstart',
+    (event) => {
+      if (event.target.closest('[data-sort-press]')) event.preventDefault();
+    },
+    options,
+  );
+  root.addEventListener(
+    'keydown',
+    (event) => {
+      const handle = event.target.closest('[data-sort-handle], [data-sort-press]');
+      if (
+        !handle ||
+        !event.altKey ||
+        !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) ||
+        !canStart()
+      )
+        return;
+      event.preventDefault();
+      const item = handle.closest('[data-sort-id]');
+      const list = item.parentElement;
+      const items = [...list.children];
+      const from = items.indexOf(item);
+      const to = from + (['ArrowUp', 'ArrowLeft'].includes(event.key) ? -1 : 1);
+      if (!items[to]) return;
+      [items[from], items[to]] = [items[to], items[from]];
+      onCommit(
+        list.dataset.sortType,
+        list.dataset.groupId,
+        items.map((node) => node.dataset.sortId),
+      );
+    },
+    options,
+  );
+  return {
+    cancel,
+    destroy() {
+      cancel();
+      abort.abort();
+    },
+  };
 }

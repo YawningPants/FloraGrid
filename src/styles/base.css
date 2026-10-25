@@ -1,11 +1,6 @@
 :root {
   color-scheme: dark;
-  font-family:
-    "Microsoft YaHei UI",
-    "Microsoft YaHei",
-    "PingFang SC",
-    "Segoe UI",
-    sans-serif;
+  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Segoe UI', sans-serif;
   background: transparent;
   --theme-base-rgb: 34, 52, 58;
   --theme-surface-rgb: 46, 69, 72;

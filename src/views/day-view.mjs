@@ -1,7 +1,10 @@
-import { tagPalette } from '../data/sample-calendar.mjs';
+import { taskColorInk } from '../domain/color-ink.mjs';
+import { registerDataTransferParticipant, isDataTransferBusy } from '../ui/data-transfer-participant.mjs';
 import { getDayDisplayMeta, getTodayDateKey, shiftDateKey } from '../domain/date.mjs';
 import { ensureTaskFlower, getTaskFlower } from '../domain/flowers.mjs';
 import { canPresentTaskTags } from '../domain/task-presentation.mjs';
+import { recordTaskCompletion } from '../domain/header-garden.mjs';
+import { getPersistableTasks } from '../domain/task-snapshot.mjs';
 import {
   cloneTemplateAsSnapshot,
   createTagSnapshot,
@@ -11,14 +14,9 @@ import {
   normalizeTaskTags,
   pickUnusedColor,
   tagColors,
+  legacyTagPalette,
 } from '../domain/tags.mjs';
-import {
-  applyThemeSettings,
-  defaultTheme,
-  loadThemeSettings,
-  saveThemeSettings,
-  getThemePresets,
-} from '../domain/theme.mjs';
+import { applyThemeSettings, loadThemeSettings } from '../domain/theme.mjs';
 import {
   canAcceptChildTask,
   canEditTask,
@@ -33,25 +31,24 @@ import {
   normalizeSearchQuery,
   normalizeTaskTree,
   removeTask,
+  reopenCompletedAncestors,
   taskStatusMeta,
 } from '../domain/tasks.mjs';
-import {
-  canPasteToDate,
-  copyTask,
-  createPastedTaskFromClipboard,
-} from '../domain/task-clipboard.mjs';
+import { canPasteToDate, copyTask, createPastedTaskFromClipboard } from '../domain/task-clipboard.mjs';
 import { flushDaySave, getDayStorageOriginId, loadDay, scheduleSaveDay } from '../storage/day-storage.mjs';
-import {
-  loadStorageLocation,
-  pickDataDirectory,
-  resetStorageLocation,
-  setStorageLocation,
-} from '../storage/storage-location.mjs';
 import { loadTagTemplates } from '../storage/tag-template-storage.mjs';
 import { appendHighlightedText, el, escapeHtml, truncateText } from '../ui/dom.mjs';
 import { icon } from '../ui/icons.mjs';
-import { botanicalMotionEnabled, completionMarkup, createBotanicalEmpty, markNewShoot, sproutMarkup } from '../ui/botanical.mjs';
+import {
+  botanicalMotionEnabled,
+  completionFeedbackDurationMs,
+  completionMarkup,
+  createBotanicalEmpty,
+  markNewShoot,
+  sproutMarkup,
+} from '../ui/botanical.mjs';
 import { showNotice } from '../ui/notice.mjs';
+import { createHeaderGarden } from '../ui/header-garden.mjs';
 import { createScrollRegion, disposeScrollRegion } from '../ui/scroll-region.mjs';
 import { applyTagLineReserve, applyTreeBranchLayout, queueTaskTreeLayout } from '../ui/task-tree-layout.mjs';
 import { createTaskDragController } from '../ui/task-drag-controller.mjs';
@@ -91,7 +88,6 @@ let themeSettings = applyThemeSettings(loadThemeSettings());
 let isAlwaysOnTop = false;
 let isTagPopoverViewportHandlerBound = false;
 let isTagPopoverOutsideHandlerBound = false;
-let storageLocation = null;
 let taskContextMenu = null;
 let taskColorPalette = null;
 let isTaskColorPaletteHandlerBound = false;
@@ -104,9 +100,9 @@ let dayRefreshPending = false;
 const pendingCompletions = new Map();
 const completionMoves = new Set();
 let completionSettleTimer = 0;
-let completionSettleGeneration = 0;
 const childrenAnimations = new Map();
 let isReplacingTaskArea = false;
+let headerGarden = null;
 const TAG_GROUP_VISIBLE_CHARS = 5;
 const TAG_GROUP_MIN_WIDTH = 34;
 const TAG_GROUP_MAX_WIDTH = 90;
@@ -118,12 +114,31 @@ const taskColors = tagColors;
 const taskColorNames = ['浅蓝', '淡紫', '柔粉', '暖橙', '沙黄', '草绿', '青绿', '蓝灰'];
 
 export function createDayView(options = {}) {
+  headerGarden?.destroy();
   applyThemeSettings(themeSettings);
   resetDayViewState(options.date);
-  daySwitchInFlight = false; dayWindowRetired = false; dayHandoffId = null;
+  daySwitchInFlight = false;
+  dayWindowRetired = false;
+  dayHandoffId = null;
   const root = el('section', 'day-window');
-  initialDayClaim = bindDayWindowHandoff(root).then(() => claimDayWindowDate(currentDay.date)).catch(console.error);
-  root.append(createTitleBar(), createHeader(root), createToolbar(root), createTaskScrollRegion(taskState), createNotes(), createTagPopoverLayer());
+  initialDayClaim = bindDayWindowHandoff(root)
+    .then(() => claimDayWindowDate(currentDay.date))
+    .catch(console.error);
+  root.append(
+    createTitleBar(),
+    createHeader(root),
+    createToolbar(root),
+    createTaskScrollRegion(taskState),
+    createNotes(),
+    createTagPopoverLayer(),
+  );
+  headerGarden = createHeaderGarden(root, {
+    getItems: () => taskState,
+    getDate: () => currentDay.date,
+    getSettings: () => themeSettings,
+    isLoading: () => isDayLoading,
+    onActivityChange: (active) => handleDayActivity(root, active),
+  });
   taskDragController = createTaskDragController({
     root,
     getItems: () => taskState,
@@ -131,8 +146,13 @@ export function createDayView(options = {}) {
     getList: () => root.querySelector('.task-list'),
     getTree: () => root.querySelector('.task-tree'),
     rowSelector: '.task-row',
-    canStart: () => !editingTaskId && !isDayLoading && !pendingCompletions.size && !root.querySelector('.children.is-animating'),
-    createPreview: (task, target, items) => createTaskNode(task, target.depth, getPreviewParentTags(items, target.parentId) || []),
+    canStart: () =>
+      !editingTaskId &&
+      !isDayLoading &&
+      !pendingCompletions.size &&
+      !root.querySelector('.children.is-animating'),
+    createPreview: (task, target, items) =>
+      createTaskNode(task, target.depth, getPreviewParentTags(items, target.parentId) || []),
     afterLayout: () => {
       applyTagLineReserve(root);
       applyTreeBranchLayout(root);
@@ -155,13 +175,30 @@ export function createDayView(options = {}) {
   bindExitRequestHandler();
   bindTagTemplateUpdateHandler(root);
   bindDayUpdateHandler(root);
+  registerDataTransferParticipant({
+    root,
+    prepare: async () => {
+      if (isDayLoading || daySwitchInFlight || dayHandoffId)
+        throw new Error('日视图正在切换日期，请稍后重试');
+      if (loadErrorMessage) throw new Error('日视图数据尚未正确加载，请先重新打开该窗口');
+      taskDragController?.cancel();
+      document.activeElement?.blur?.();
+      await flushDaySave();
+    },
+    reload: async () => {
+      editingTaskId = null;
+      await reloadCurrentStorage(root);
+    },
+  });
   bindThemeUpdateHandler(root);
   bindStorageUpdateHandler(root);
   bindTagPopoverViewportHandlers();
   bindTagPopoverOutsideHandler();
   bindTaskColorPaletteHandlers();
-  window.addEventListener('calendar://save-error', () => showToast('保存失败，修改仍保留在当前窗口，请稍后重试'));
-  bindCalendarNavigation(target => {
+  window.addEventListener('calendar://save-error', () =>
+    showToast('保存失败，修改仍保留在当前窗口，请稍后重试'),
+  );
+  bindCalendarNavigation((target) => {
     if ((target.taskId || target.note) && (!target.date || target.date === currentDay.date)) {
       pendingReveal = target;
       if (!isDayLoading) revealSearchTarget(root);
@@ -195,6 +232,7 @@ function createTitleBar() {
       },
     },
     onMinimize: () => {
+      headerGarden?.pause();
       flushDaySave();
       window.calendarShell?.minimize();
     },
@@ -322,7 +360,8 @@ function createTaskScrollRegion(items) {
   const summary = list.querySelector('.status-summary');
   summary?.remove();
   const region = createScrollRegion(list, {
-    className: 'task-scroll-region', label: '任务',
+    className: 'task-scroll-region',
+    label: '任务',
     topInset: () => summary?.offsetHeight || 0,
   });
   if (summary) region.prepend(summary);
@@ -369,6 +408,9 @@ function createStatusSummary(items) {
   );
 
   const summary = el('div', 'status-summary');
+  Object.entries(counts).forEach(([status, count]) => {
+    summary.dataset[status] = count;
+  });
   summary.innerHTML = `
     <span>${taskStatusMeta.active.label} ${counts.active}</span>
     <span>${taskStatusMeta.completed.label} ${counts.completed}</span>
@@ -378,22 +420,42 @@ function createStatusSummary(items) {
   return summary;
 }
 
+function updateCompletionSummary(root, previousStatus, nextStatus) {
+  const summary = root.querySelector('.status-summary');
+  if (!summary) return;
+  for (const [status, delta] of [
+    [previousStatus, -1],
+    [nextStatus, 1],
+  ]) {
+    const count = Math.max(0, Number(summary.dataset[status]) + delta);
+    summary.dataset[status] = count;
+    const index = ['active', 'completed', 'failed', 'deleted'].indexOf(status);
+    summary.children[index].textContent = `${taskStatusMeta[status].label} ${count}`;
+  }
+}
+
 function createTaskNode(task, depth, inheritedTags) {
   const inherited = [...inheritedTags, ...task.tags];
   const visibleTags = depth > 0 ? [...inheritedTags, ...task.tags] : task.tags;
   const hasChildren = Boolean(task.children?.length);
   const isCollapsed = hasChildren && task.collapsed;
-  const wrapper = el('article', `task-node depth-${Math.min(depth, 3)}${hasChildren ? ' has-children' : ''}${isCollapsed ? ' is-collapsed' : ''}`);
+  const wrapper = el(
+    'article',
+    `task-node depth-${Math.min(depth, 3)}${hasChildren ? ' has-children' : ''}${isCollapsed ? ' is-collapsed' : ''}`,
+  );
   wrapper.classList.toggle('is-completed-branch', hasChildren && task.status === 'completed');
   wrapper.style.setProperty('--depth', depth);
   const row = createTaskRow(task, depth, visibleTags);
   const branch = el('div', 'tree-branch');
   branch.append(el('span', `tree-leaf-node${hasChildren ? ' has-children' : ''}`));
   wrapper.append(branch, row);
+  updateRootTaskFrame(row, task);
 
   if (hasChildren) {
     const children = el('div', `children${isCollapsed ? ' is-collapsed' : ''}`);
-    getVisibleTaskTree(task.children).forEach((child) => children.append(createTaskNode(child, depth + 1, inherited)));
+    getVisibleTaskTree(task.children).forEach((child) =>
+      children.append(createTaskNode(child, depth + 1, inherited)),
+    );
     if (children.childElementCount > 0) wrapper.append(children);
   }
   return wrapper;
@@ -402,31 +464,44 @@ function createTaskNode(task, depth, inheritedTags) {
 function createTaskRow(task, depth, visibleTags) {
   const hasChildren = Boolean(task.children?.length);
   const isCollapsed = hasChildren && task.collapsed;
-  const row = el('div', `task-row is-${task.status}${task.color ? ' has-custom-color' : ''}${task.long ? ' is-large' : ''}${task.id === editingTaskId ? ' is-editing' : ''}${activeTagPopoverTaskId === task.id ? ' has-tag-popover' : ''}${hasChildren ? ' has-children' : ''}${isCollapsed ? ' is-collapsed' : ''}`);
+  const row = el(
+    'div',
+    `task-row is-${task.status}${task.color ? ' has-custom-color' : ''}${task.long ? ' is-large' : ''}${task.id === editingTaskId ? ' is-editing' : ''}${activeTagPopoverTaskId === task.id ? ' has-tag-popover' : ''}${hasChildren ? ' has-children' : ''}${isCollapsed ? ' is-collapsed' : ''}`,
+  );
   row.classList.toggle('is-reminder', Boolean(task.reminder));
   row.classList.toggle('is-pinned-task', Boolean(task.pinned));
   row.dataset.taskId = task.id;
   row.dataset.depth = String(depth);
   row.style.setProperty('--depth', depth);
   row.style.setProperty('--accent', getTaskAccentColor(task));
+  row.style.setProperty('--accent-ink', task.color ? taskColorInk(task.color) : 'var(--ink,var(--text))');
   row.addEventListener('pointerleave', () => {
     const focused = document.activeElement;
     if (row.contains(focused) && focused.matches('button:not(:focus-visible)')) focused.blur();
   });
 
-  row.append(createDragHandle(task), createStatusButton(task, depth), createTaskBody(task, visibleTags, depth));
+  row.append(
+    createDragHandle(task),
+    createStatusButton(task, depth),
+    createTaskBody(task, visibleTags, depth),
+  );
   const actions = createTaskActions(task, depth);
   if (hasChildren || actions.childElementCount || canColorTask(task)) {
     const controls = el('div', 'task-row-controls');
-    controls.append(actions, createTaskColorButton(task)); row.querySelector('.task-meta-row').append(controls);
+    controls.append(actions, createTaskColorButton(task));
+    row.querySelector('.task-meta-row').append(controls);
   }
   if (hasChildren) row.append(createCollapseToggle(task));
   if (task.reminder) {
-    const badge = el('button', 'reminder-task-badge'); badge.type = 'button';
-    badge.innerHTML = icon(task.kind === 'birthday' ? 'cake' : task.kind === 'anniversary' ? 'heart' : 'bell');
+    const badge = el('button', 'reminder-task-badge');
+    badge.type = 'button';
+    badge.innerHTML = icon(
+      task.kind === 'birthday' ? 'cake' : task.kind === 'anniversary' ? 'heart' : 'bell',
+    );
     badge.title = `管理提醒 · ${task.reminder.schedule || ''}`;
     badge.setAttribute('aria-label', badge.title);
-    badge.onclick = () => openMonth({ panel: 'reminders', ruleId: task.reminder.ruleId }).catch(console.error);
+    badge.onclick = () =>
+      openMonth({ panel: 'reminders', ruleId: task.reminder.ruleId }).catch(console.error);
     row.querySelector('.task-body').prepend(badge);
   }
   if (canMoveTask(task)) {
@@ -494,8 +569,7 @@ function createTaskBody(task, visibleTags, depth) {
   // Preserve the full tag snapshot and inherited-tag implementation for re-enabling.
   const displayTags = canPresentTaskTags(depth) ? visibleTags : [];
   const body = el('div', 'task-body');
-  const title =
-    task.id === editingTaskId ? createTaskTitleInput(task) : createTaskTitleText(task);
+  const title = task.id === editingTaskId ? createTaskTitleInput(task) : createTaskTitleText(task);
   const tags = el('div', 'tag-list');
   const inheritedTagCount = visibleTags.length - task.tags.length;
 
@@ -504,6 +578,7 @@ function createTaskBody(task, visibleTags, depth) {
     const isInherited = index < inheritedTagCount;
     chip.classList.toggle('is-inherited', isInherited);
     chip.style.setProperty('--tag-color', getSnapshotTagColor(tag, '#9aa8b5'));
+    chip.style.setProperty('--tag-ink', taskColorInk(chip.style.getPropertyValue('--tag-color')));
     chip.append(document.createTextNode(getTagText(tag)));
     if (isInherited) {
       const marker = el('span', 'tag-inherited-mark');
@@ -566,7 +641,8 @@ function createTagPopoverLayer() {
   applyTagPopoverPosition(popover, activeTagPopoverAnchor);
   // The layer is assembled off-DOM; measure again once it has real dimensions.
   queueMicrotask(() => {
-    if (popover.isConnected && activeTagPopoverAnchor) applyTagPopoverPosition(popover, activeTagPopoverAnchor);
+    if (popover.isConnected && activeTagPopoverAnchor)
+      applyTagPopoverPosition(popover, activeTagPopoverAnchor);
   });
   return layer;
 }
@@ -677,6 +753,7 @@ function createTagPopover(task) {
     const swatch = el('button', `tag-color-swatch${temporaryTagColor === color ? ' is-selected' : ''}`);
     swatch.type = 'button';
     swatch.style.setProperty('--swatch', color);
+    swatch.style.setProperty('--swatch-ink', taskColorInk(swatch.style.getPropertyValue('--swatch')));
     swatch.setAttribute('aria-label', `选择颜色 ${color}`);
     swatch.addEventListener('click', () => {
       temporaryTagColor = color;
@@ -831,6 +908,7 @@ function renderTemplateTags(container, task) {
     const button = el('button', 'tag-template-button');
     button.type = 'button';
     button.style.setProperty('--tag-color', template.color);
+    button.style.setProperty('--tag-ink', taskColorInk(button.style.getPropertyValue('--tag-color')));
     button.textContent = template.text;
     button.addEventListener('click', () => {
       addTagToTask(task, cloneTemplateAsSnapshot(template));
@@ -911,7 +989,8 @@ function createTaskActions(task, depth) {
       actionButton(icon('plus'), 'child', '新建子任务', () => addChildTask(task.id)),
       actionButton(icon('fail'), 'fail', '标记失败', () => failTask(task.id)),
     );
-    if (canPresentTaskTags(depth)) actions.insertBefore(createTagAddButton(task), actions.querySelector('.fail'));
+    if (canPresentTaskTags(depth))
+      actions.insertBefore(createTagAddButton(task), actions.querySelector('.fail'));
   }
   if (task.status === 'failed') {
     actions.append(actionButton(icon('restore'), 'restore', '恢复进行中', () => restoreFailedTask(task.id)));
@@ -991,6 +1070,7 @@ function openTaskColorPalette(task, trigger, { keyboard = false } = {}) {
     button.setAttribute('aria-pressed', String(task.color === color));
     const swatch = el('span', 'task-color-choice-swatch');
     swatch.style.setProperty('--swatch', color);
+    swatch.style.setProperty('--swatch-ink', taskColorInk(swatch.style.getPropertyValue('--swatch')));
     swatch.textContent = task.color === color ? '✓' : '';
     button.append(swatch);
     button.addEventListener('click', () => {
@@ -1014,8 +1094,12 @@ function openTaskColorPalette(task, trigger, { keyboard = false } = {}) {
 
   document.body.append(palette);
   taskColorPalette = { taskId: task.id, element: palette, trigger, keyboard };
-  palette.addEventListener('pointerdown', () => { if (taskColorPalette) taskColorPalette.keyboard = false; });
-  palette.addEventListener('keydown', () => { if (taskColorPalette) taskColorPalette.keyboard = true; });
+  palette.addEventListener('pointerdown', () => {
+    if (taskColorPalette) taskColorPalette.keyboard = false;
+  });
+  palette.addEventListener('keydown', () => {
+    if (taskColorPalette) taskColorPalette.keyboard = true;
+  });
   trigger.setAttribute('aria-expanded', 'true');
   positionTaskColorPalette(palette, trigger);
   (palette.querySelector('.task-color-choice.is-selected') || noColor).focus({ preventScroll: true });
@@ -1026,7 +1110,10 @@ function positionTaskColorPalette(palette, trigger) {
   const gap = 8;
   const anchor = trigger.getBoundingClientRect();
   const bounds = palette.getBoundingClientRect();
-  const left = Math.max(margin, Math.min(anchor.right - bounds.width, window.innerWidth - bounds.width - margin));
+  const left = Math.max(
+    margin,
+    Math.min(anchor.right - bounds.width, window.innerWidth - bounds.width - margin),
+  );
   const below = anchor.bottom + gap;
   const above = anchor.top - bounds.height - gap;
   const top = below + bounds.height <= window.innerHeight - margin ? below : Math.max(margin, above);
@@ -1055,26 +1142,55 @@ function bindTaskColorPaletteHandlers() {
     return;
   }
   isTaskColorPaletteHandlerBound = true;
-  document.addEventListener('pointerdown', (event) => {
-    const target = event.target instanceof Element ? event.target : null;
-    if (taskColorPalette && !taskColorPalette.element.contains(target) && !target?.closest('.task-color-button')) {
-      closeTaskColorPalette();
-    }
-  }, true);
-  window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && taskColorPalette) {
-      event.preventDefault();
-      event.stopPropagation();
-      closeTaskColorPalette(true);
-    }
-  }, true);
-  document.addEventListener('scroll', (event) => {
-    if (taskColorPalette && !taskColorPalette.element.contains(event.target)) {
-      closeTaskColorPalette();
-    }
-  }, true);
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (
+        taskColorPalette &&
+        !taskColorPalette.element.contains(target) &&
+        !target?.closest('.task-color-button')
+      ) {
+        closeTaskColorPalette();
+      }
+    },
+    true,
+  );
+  window.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key === 'Escape' && taskColorPalette) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeTaskColorPalette(true);
+      }
+    },
+    true,
+  );
+  document.addEventListener(
+    'scroll',
+    (event) => {
+      if (taskColorPalette && !taskColorPalette.element.contains(event.target)) {
+        closeTaskColorPalette();
+      }
+    },
+    true,
+  );
   window.addEventListener('resize', () => closeTaskColorPalette());
   window.addEventListener('blur', () => closeTaskColorPalette());
+}
+
+function updateRootTaskFrame(row, task) {
+  if (row.dataset.depth !== '0') return;
+  const frame = row.closest('.task-node');
+  if (!frame) return;
+  if (task.color) {
+    frame.style.setProperty('--group-accent', task.color);
+    frame.style.setProperty('--group-ink', taskColorInk(task.color));
+  } else {
+    frame.style.removeProperty('--group-accent');
+    frame.style.removeProperty('--group-ink');
+  }
 }
 
 function updateTaskColorInPlace(task) {
@@ -1085,6 +1201,8 @@ function updateTaskColorInPlace(task) {
 
   const color = getTaskAccentColor(task);
   row.style.setProperty('--accent', color);
+  row.style.setProperty('--accent-ink', task.color ? taskColorInk(task.color) : 'var(--ink,var(--text))');
+  updateRootTaskFrame(row, task);
   row.classList.toggle('has-custom-color', Boolean(task.color));
 
   const button = row.querySelector('.task-color-button');
@@ -1116,10 +1234,27 @@ function openTaskContextMenu(event, task) {
   const menu = el('div', 'task-context-menu');
   menu.setAttribute('role', 'menu');
   menu.append(createTaskContextMenuItem('复制', '', () => copyTaskFromDay(task)));
-  menu.append(createTaskContextMenuItem(task.pinned ? '取消任务置顶' : '置顶任务', '', () => {
-    task.pinned = !task.pinned; persistCurrentDaySoon(); renderDayView(document.querySelector('.day-window'));
-  }, icon('pin')));
-  if (task.reminder) menu.append(createTaskContextMenuItem('管理重复提醒', '', () => openMonth({ panel: 'reminders', ruleId: task.reminder.ruleId }), icon('bell')));
+  menu.append(
+    createTaskContextMenuItem(
+      task.pinned ? '取消任务置顶' : '置顶任务',
+      '',
+      () => {
+        task.pinned = !task.pinned;
+        persistCurrentDaySoon();
+        renderDayView(document.querySelector('.day-window'));
+      },
+      icon('pin'),
+    ),
+  );
+  if (task.reminder)
+    menu.append(
+      createTaskContextMenuItem(
+        '管理重复提醒',
+        '',
+        () => openMonth({ panel: 'reminders', ruleId: task.reminder.ruleId }),
+        icon('bell'),
+      ),
+    );
   if (canPasteToDate(currentDay.date)) {
     menu.append(createTaskContextMenuItem('粘贴', '', pasteTaskAsRoot));
     if (task.status === 'active') {
@@ -1272,14 +1407,17 @@ function createTaskTitleText(task) {
   if (canEditTask(task)) {
     title.title = '点击编辑任务';
     title.addEventListener('click', () => {
-        removeEmptyDraftTask();
-        editingTaskId = task.id;
+      removeEmptyDraftTask();
+      editingTaskId = task.id;
       renderDayView(document.querySelector('.day-window'));
     });
   } else {
-    const hint = task.status === 'completed' ? '已完成的任务暂不能编辑，请先改为进行中。'
-      : task.status === 'failed' ? '已失败的任务暂不能编辑，请先恢复为进行中。'
-      : '已删除的任务暂不能编辑，请先恢复任务。';
+    const hint =
+      task.status === 'completed'
+        ? '已完成的任务暂不能编辑，请先改为进行中。'
+        : task.status === 'failed'
+          ? '已失败的任务暂不能编辑，请先恢复为进行中。'
+          : '已删除的任务暂不能编辑，请先恢复任务。';
     title.title = hint;
     title.addEventListener('click', () => showToast(hint));
   }
@@ -1316,7 +1454,8 @@ function createTaskTitleInput(task) {
   let settled = false;
   const finish = () => {
     if (settled || isReplacingTaskArea || editingTaskId !== task.id) return;
-    settled = true; finishTaskEditing(task);
+    settled = true;
+    finishTaskEditing(task);
   };
   input.value = task.title;
   input.placeholder = '输入任务名称';
@@ -1333,7 +1472,10 @@ function createTaskTitleInput(task) {
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      if (!settled) { settled = true; cancelEmptyTask(task); }
+      if (!settled) {
+        settled = true;
+        cancelEmptyTask(task);
+      }
     }
   });
   input.addEventListener('blur', () => {
@@ -1411,27 +1553,33 @@ async function bindDayWindowHandoff(root) {
   const listen = window.__TAURI__?.event?.listen;
   const invoke = window.__TAURI__?.core?.invoke;
   if (!listen || !invoke) return;
-  const restore = id => {
+  const restore = (id) => {
     if (dayHandoffId !== id) return;
-    dayHandoffId = null; dayWindowRetired = false; root.inert = false;
+    dayHandoffId = null;
+    dayWindowRetired = false;
+    root.inert = false;
   };
   await Promise.all([
-    listen('calendar://day-handoff-requested', async event => {
+    listen('calendar://day-handoff-requested', async (event) => {
       const id = event.payload?.id;
       if (!id) return;
       try {
-        if (daySwitchInFlight || isDayLoading || dayHandoffId || taskDragController?.active) throw new Error('日视图正在操作中，请稍后重试');
-        dayHandoffId = id; root.inert = true;
+        if (daySwitchInFlight || isDayLoading || dayHandoffId || taskDragController?.active)
+          throw new Error('日视图正在操作中，请稍后重试');
+        dayHandoffId = id;
+        root.inert = true;
         await persistCurrentDayNow();
         if (dayHandoffId !== id) throw new Error('日视图交接已取消');
         dayWindowRetired = true;
         await invoke('complete_day_window_handoff', { id });
       } catch (error) {
         restore(id);
-        await invoke('complete_day_window_handoff', { id, error: String(error.message || error) }).catch(console.error);
+        await invoke('complete_day_window_handoff', { id, error: String(error.message || error) }).catch(
+          console.error,
+        );
       }
     }),
-    listen('calendar://day-handoff-cancelled', event => restore(event.payload?.id)),
+    listen('calendar://day-handoff-cancelled', (event) => restore(event.payload?.id)),
     listen('calendar://show-today-requested', () => openDay(getTodayDateKey()).catch(console.error)),
   ]);
 }
@@ -1469,14 +1617,22 @@ function bindDayUpdateHandler(root) {
 
   isDayUpdateHandlerBound = true;
   const refreshDay = async (event) => {
-    if (dayWindowRetired || dayHandoffId || daySwitchInFlight) return;
+    if (isDataTransferBusy() || dayWindowRetired || dayHandoffId || daySwitchInFlight) return;
     const dateKey = event?.payload?.date || event?.detail?.date;
     const originId = event?.payload?.originId || event?.detail?.originId;
     if (!dateKey || dateKey !== currentDay.date || originId === getDayStorageOriginId()) {
       return;
     }
-    if (isDayLoading) { dayRefreshPending = true; return; }
-    try { await flushDaySave(); await loadCurrentDay(root); } catch (error) { console.error(error); }
+    if (isDayLoading) {
+      dayRefreshPending = true;
+      return;
+    }
+    try {
+      await flushDaySave();
+      await loadCurrentDay(root);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   if (window.__TAURI__?.event?.listen) {
@@ -1484,8 +1640,9 @@ function bindDayUpdateHandler(root) {
   }
 
   window.addEventListener('calendar://day-updated', refreshDay);
-  window.addEventListener('storage', event => {
-    if (event.key === `desktop-calendar:day:${currentDay.date}`) refreshDay({ detail: { date: currentDay.date } });
+  window.addEventListener('storage', (event) => {
+    if (event.key === `desktop-calendar:day:${currentDay.date}`)
+      refreshDay({ detail: { date: currentDay.date } });
   });
 }
 
@@ -1496,7 +1653,9 @@ function bindThemeUpdateHandler(root) {
 
   isThemeUpdateHandlerBound = true;
   const refreshTheme = (event) => {
-    themeSettings = applyThemeSettings(event?.payload?.settings || event?.detail?.settings || loadThemeSettings());
+    themeSettings = applyThemeSettings(
+      event?.payload?.settings || event?.detail?.settings || loadThemeSettings(),
+    );
     renderDayView(root);
   };
 
@@ -1514,8 +1673,7 @@ function bindStorageUpdateHandler(root) {
 
   isStorageUpdateHandlerBound = true;
   const refreshStorage = async (event) => {
-    storageLocation = event?.payload?.location || event?.detail?.location || storageLocation;
-    await reloadCurrentStorage(root);
+    if (!isDataTransferBusy()) await reloadCurrentStorage(root);
   };
 
   if (window.__TAURI__?.event?.listen) {
@@ -1598,17 +1756,15 @@ function closeTagPopoverFromViewportChange() {
 async function loadCurrentDay(root) {
   isDayLoading = true;
   loadErrorMessage = '';
-  renderDayView(root);
+  renderDayView(root, { gardenAnimate: false });
 
   try {
-    await ensureReminders(currentDay.date).catch(error => { console.error(error); showToast('提醒暂未生成，请稍后重试'); });
-    const [storedDay, storedTagTemplates, storedLocation] = await Promise.all([
-      loadDay(currentDay.date),
-      loadTagTemplates(),
-      loadStorageLocation(),
-    ]);
+    await ensureReminders(currentDay.date).catch((error) => {
+      console.error(error);
+      showToast('提醒暂未生成，请稍后重试');
+    });
+    const [storedDay, storedTagTemplates] = await Promise.all([loadDay(currentDay.date), loadTagTemplates()]);
     tagTemplates = storedTagTemplates;
-    storageLocation = storedLocation;
     currentDay = normalizeDay(storedDay || currentDay);
   } catch (error) {
     loadErrorMessage = '读取本地数据失败，当前显示临时数据';
@@ -1619,10 +1775,15 @@ async function loadCurrentDay(root) {
   taskState = currentDay.tasks;
   dailyNoteText = currentDay.note;
   isDayLoading = false;
-  renderDayView(root);
+  renderDayView(root, { gardenAnimate: false });
   renderNotesOnly(root);
   revealSearchTarget(root);
-  if (dayRefreshPending) { dayRefreshPending = false; queueMicrotask(() => { if (root.isConnected) loadCurrentDay(root); }); }
+  if (dayRefreshPending) {
+    dayRefreshPending = false;
+    queueMicrotask(() => {
+      if (root.isConnected) loadCurrentDay(root);
+    });
+  }
 }
 
 function revealSearchTarget(root) {
@@ -1631,17 +1792,26 @@ function revealSearchTarget(root) {
   if (target.taskId && !findTask(taskState, target.taskId) && dayRefreshPending) return;
   pendingReveal = null;
   if (target.includeDeleted) showDeletedTasks = true;
-  isSearchOpen = false; searchQuery = '';
-  const expand = tasks => tasks.some(task => {
-    if (task.id === target.taskId) return true;
-    if (expand(task.children || [])) { task.collapsed = false; return true; }
-    return false;
-  });
-  expand(taskState); renderDayView(root);
+  isSearchOpen = false;
+  searchQuery = '';
+  const expand = (tasks) =>
+    tasks.some((task) => {
+      if (task.id === target.taskId) return true;
+      if (expand(task.children || [])) {
+        task.collapsed = false;
+        return true;
+      }
+      return false;
+    });
+  expand(taskState);
+  renderDayView(root);
   requestAnimationFrame(() => {
-    const node = target.note ? root.querySelector('.note-editor') : [...root.querySelectorAll('.task-row')].find(row => row.dataset.taskId === target.taskId);
+    const node = target.note
+      ? root.querySelector('.note-editor')
+      : [...root.querySelectorAll('.task-row')].find((row) => row.dataset.taskId === target.taskId);
     if (!node) return;
-    node.scrollIntoView({ block: 'center', behavior: 'smooth' }); node.classList.add('is-search-located');
+    node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    node.classList.add('is-search-located');
     if (target.note) node.focus({ preventScroll: true });
     setTimeout(() => node.classList.remove('is-search-located'), 2600);
   });
@@ -1669,11 +1839,12 @@ async function switchToDay(root, nextDate) {
     return;
   }
 
-  daySwitchInFlight = true; root.inert = true;
+  daySwitchInFlight = true;
+  root.inert = true;
   try {
     await initialDayClaim;
     await persistCurrentDayNow();
-    if (!await claimDayWindowDate(nextDate, true)) {
+    if (!(await claimDayWindowDate(nextDate, true))) {
       return;
     }
     resetTransientDayState();
@@ -1682,7 +1853,9 @@ async function switchToDay(root, nextDate) {
     dailyNoteText = currentDay.note;
     const url = new URL(location.href);
     url.searchParams.set('date', nextDate);
-    url.searchParams.delete('taskId'); url.searchParams.delete('note'); url.searchParams.delete('deleted');
+    url.searchParams.delete('taskId');
+    url.searchParams.delete('note');
+    url.searchParams.delete('deleted');
     url.hash = '';
     history.replaceState(null, '', url);
     await loadCurrentDay(root);
@@ -1722,7 +1895,7 @@ function normalizeDay(day) {
   return {
     date: day.date || currentDay.date,
     note: day.note || '',
-    tasks: removeEmptyTasks(normalizeTaskTree(normalizeTaskTags(tasks, tagPalette))),
+    tasks: getPersistableTasks(normalizeTaskTree(normalizeTaskTags(tasks, legacyTagPalette))),
   };
 }
 
@@ -1732,24 +1905,6 @@ function createEmptyDay(date) {
     note: '',
     tasks: [],
   };
-}
-
-function removeEmptyTasks(tasks) {
-  return (tasks || [])
-    .map((task) => ({
-      ...task,
-      children: removeEmptyTasks(task.children || []),
-    }))
-    .filter((task) => {
-      const hasTitle = typeof task.title === 'string' && task.title.trim();
-      const hasTags = Array.isArray(task.tags) && task.tags.length > 0;
-      const hasChildren = Array.isArray(task.children) && task.children.length > 0;
-      return hasTitle || hasTags || hasChildren || task.status !== 'active';
-    });
-}
-
-function getPersistableTasks(tasks) {
-  return removeEmptyTasks(structuredClone(tasks || []));
 }
 
 function removeEmptyDraftTask() {
@@ -1790,11 +1945,11 @@ async function persistCurrentDayNow() {
 function shouldKeepEscapeInDayView(event) {
   const target = event.target instanceof Element ? event.target : null;
   return (
-    event.defaultPrevented
-    || editingTaskId
-    || isSearchOpen
-    || taskDragController?.active
-    || target?.closest('input, textarea, select, [contenteditable="true"]')
+    event.defaultPrevented ||
+    editingTaskId ||
+    isSearchOpen ||
+    taskDragController?.active ||
+    target?.closest('input, textarea, select, [contenteditable="true"]')
   );
 }
 
@@ -1840,8 +1995,9 @@ function addChildTask(parentId) {
 
 function revealTaskAfterRender(root, taskId) {
   window.requestAnimationFrame(() => {
-    const row = Array.from(root?.querySelectorAll('.task-row') || [])
-      .find((item) => item.dataset.taskId === taskId);
+    const row = Array.from(root?.querySelectorAll('.task-row') || []).find(
+      (item) => item.dataset.taskId === taskId,
+    );
     if (!row) {
       return;
     }
@@ -1883,9 +2039,12 @@ function toggleTaskCollapse(taskId) {
 function cancelChildrenAnimation(children) {
   const pending = childrenAnimations.get(children);
   if (!pending) return;
-  cancelAnimationFrame(pending.frame); cancelAnimationFrame(pending.layoutFrame); clearTimeout(pending.timer);
+  cancelAnimationFrame(pending.frame);
+  cancelAnimationFrame(pending.layoutFrame);
+  clearTimeout(pending.timer);
   children.removeEventListener('transitionend', pending.onEnd);
-  childrenAnimations.delete(children); pending.resolve(false);
+  childrenAnimations.delete(children);
+  pending.resolve(false);
   document.querySelector('.day-window')?.classList.toggle('is-tree-folding', childrenAnimations.size > 0);
 }
 
@@ -1902,10 +2061,15 @@ function animateChildrenCollapse(row, wrapper, children, collapsed, { animate = 
     toggle.title = `${collapsed ? '展开' : '折叠'} ${task?.children?.length || 0} 个子任务`;
     toggle.setAttribute('aria-label', toggle.title);
   }
-  if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  if (
+    !animate ||
+    root?.classList.contains('is-backgrounded') ||
+    matchMedia('(prefers-reduced-motion: reduce)').matches
+  ) {
     children.classList.toggle('is-collapsed', collapsed);
     children.classList.remove('is-animating');
-    children.style.removeProperty('--children-height'); children.style.removeProperty('transition');
+    children.style.removeProperty('--children-height');
+    children.style.removeProperty('transition');
     applyTreeBranchLayout(root);
     return Promise.resolve(true);
   }
@@ -1921,10 +2085,13 @@ function animateChildrenCollapse(row, wrapper, children, collapsed, { animate = 
   const last = children.querySelector(':scope > .task-node:last-child');
   const targetHeight = collapsed ? 0 : last ? last.offsetTop + last.offsetHeight : 0;
   let resolve;
-  const promise = new Promise(done => { resolve = done; });
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
   const pending = { promise, resolve, frame: 0, layoutFrame: 0, timer: 0, onEnd: null };
   const containers = new Set();
-  for (let branch = children; branch; branch = branch.parentElement?.closest('.children')) containers.add(branch);
+  for (let branch = children; branch; branch = branch.parentElement?.closest('.children'))
+    containers.add(branch);
   const updateBranches = () => {
     if (childrenAnimations.get(children) !== pending) return;
     applyTreeBranchLayout(root, { containers });
@@ -1936,12 +2103,15 @@ function animateChildrenCollapse(row, wrapper, children, collapsed, { animate = 
     cancelAnimationFrame(pending.layoutFrame);
     children.removeEventListener('transitionend', pending.onEnd);
     childrenAnimations.delete(children);
-    children.classList.remove('is-animating'); children.style.removeProperty('--children-height');
+    children.classList.remove('is-animating');
+    children.style.removeProperty('--children-height');
     if (children.isConnected) applyTreeBranchLayout(root);
     root?.classList.toggle('is-tree-folding', childrenAnimations.size > 0);
     resolve(true);
   };
-  pending.onEnd = event => { if (event.target === children && event.propertyName === 'height') finish(); };
+  pending.onEnd = (event) => {
+    if (event.target === children && event.propertyName === 'height') finish();
+  };
   children.addEventListener('transitionend', pending.onEnd);
   childrenAnimations.set(children, pending);
   pending.frame = requestAnimationFrame(() => {
@@ -1992,50 +2162,75 @@ function toggleTaskCompletion(taskId) {
 
   const root = document.querySelector('.day-window');
   if (document.body.classList.contains('is-task-dragging')) return;
-  completionSettleGeneration += 1;
   closeTaskContextMenu();
   closeTaskColorPalette();
   closeTagPopover();
   renderTagPopoverOnly(root);
+  const previousStatus = task.status;
   if (task.status === 'completed') task.flower = getTaskFlower(task);
   task.status = task.status === 'active' ? 'completed' : 'active';
-  if (task.status === 'completed') ensureTaskFlower(task);
-  if (task.status === 'completed' && task.children?.length) task.collapsed = true;
-  // Save immediately. Animation never delays persistence or changes task semantics.
-  persistCurrentDaySoon();
-  const row = root?.querySelector(`.task-row[data-task-id="${CSS.escape(taskId)}"]`);
-  if (!row) { renderDayView(root); return; }
-  const wrapper = row.closest('.task-node');
-  const location = getTaskLocation(taskState, taskId);
-  const inherited = getPreviewParentTags(taskState, location?.parentId) || [];
-  const nextRow = createTaskRow(task, Number(row.dataset.depth), [...inherited, ...task.tags]);
-  const bloom = task.status === 'completed' && botanicalMotionEnabled(themeSettings);
-  if (bloom) nextRow.style.minHeight = `${row.getBoundingClientRect().height}px`;
-  const hadFocus = row.contains(document.activeElement);
-  row.replaceWith(nextRow);
-  applyTagLineReserve(nextRow);
-  if (hadFocus) nextRow.querySelector('.status-button')?.focus({ preventScroll: true });
-  wrapper.classList.toggle('is-completed-branch', task.status === 'completed' && Boolean(task.children?.length));
-  const summary = root.querySelector('.status-summary');
-  if (summary) summary.innerHTML = createStatusSummary(taskState).innerHTML;
-  if (bloom) {
-    nextRow.classList.add('is-blooming');
-    if (task.children?.length) wrapper.classList.add('is-branch-blooming');
+  if (task.status === 'completed') {
+    ensureTaskFlower(task);
+    recordTaskCompletion(task, taskState);
   }
-  pendingCompletions.set(taskId, wrapper);
+  const reopened = task.status === 'active' ? reopenCompletedAncestors(taskState, taskId) : [];
+  if (task.status === 'completed' && task.children?.length) task.collapsed = true;
+  persistCurrentDaySoon();
+  const changes = [
+    { task, previousStatus },
+    ...reopened.map((task) => ({ task, previousStatus: 'completed' })),
+  ];
+  const pending = new Map();
+  const bloom =
+    task.status === 'completed' &&
+    !root.classList.contains('is-backgrounded') &&
+    botanicalMotionEnabled(themeSettings);
+  for (const change of changes) {
+    const row = getTaskRow(change.task.id);
+    updateCompletionSummary(root, change.previousStatus, change.task.status);
+    if (!row) continue;
+    const wrapper = row.closest('.task-node'),
+      location = getTaskLocation(taskState, change.task.id);
+    const inherited = getPreviewParentTags(taskState, location?.parentId) || [];
+    const nextRow = createTaskRow(change.task, Number(row.dataset.depth), [
+      ...inherited,
+      ...change.task.tags,
+    ]);
+    if (bloom) nextRow.style.minHeight = `${row.getBoundingClientRect().height}px`;
+    const hadFocus = row.contains(document.activeElement);
+    row.replaceWith(nextRow);
+    applyTagLineReserve(nextRow);
+    if (hadFocus) nextRow.querySelector('.status-button')?.focus({ preventScroll: true });
+    wrapper.classList.toggle(
+      'is-completed-branch',
+      change.task.status === 'completed' && Boolean(change.task.children?.length),
+    );
+    wrapper.classList.toggle('is-branch-blooming', bloom && Boolean(change.task.children?.length));
+    if (bloom) nextRow.classList.add('is-blooming');
+    pendingCompletions.set(change.task.id, wrapper);
+    pending.set(change.task.id, wrapper);
+    const children = wrapper.querySelector(':scope > .children');
+    if (children && children.classList.contains('is-collapsed') !== Boolean(change.task.collapsed)) {
+      animateChildrenCollapse(nextRow, wrapper, children, Boolean(change.task.collapsed));
+    }
+  }
+  headerGarden?.update({ animate: true, growTaskId: task.status === 'completed' ? task.id : null });
+  finishCompletionReorder(root, pending, true, { keepFeedback: bloom });
   clearTimeout(completionSettleTimer);
-  if (bloom || [...pendingCompletions.values()].some(node => node.querySelector(':scope > .is-blooming'))) {
-    completionSettleTimer = window.setTimeout(() => settleCompletionFeedback(root), 440);
+  if (bloom || [...pendingCompletions.values()].some((node) => node.querySelector(':scope > .is-blooming'))) {
+    completionSettleTimer = window.setTimeout(
+      () => settleCompletionFeedback(root),
+      completionFeedbackDurationMs + 20,
+    );
   } else settleCompletionFeedback(root);
 }
 
 function cancelCompletionMoves() {
-  completionMoves.forEach(animation => animation.cancel());
+  completionMoves.forEach((animation) => animation.cancel());
   completionMoves.clear();
 }
 
 function clearCompletionFeedback() {
-  completionSettleGeneration += 1;
   clearTimeout(completionSettleTimer);
   completionSettleTimer = 0;
   pendingCompletions.clear();
@@ -2043,51 +2238,74 @@ function clearCompletionFeedback() {
   [...childrenAnimations.keys()].forEach(cancelChildrenAnimation);
 }
 
+function handleDayActivity(root, active) {
+  if (active) return;
+  // Backgrounding preserves the committed task state and removes all finite feedback.
+  // Fold RAF loops and FLIP animations must not keep a hidden window painting.
+  taskDragController?.cancel();
+  settleCompletionFeedback(root, false);
+  cancelCompletionMoves();
+  [...childrenAnimations.keys()].forEach((children) => {
+    const wrapper = children.parentElement,
+      row = wrapper.querySelector(':scope > .task-row');
+    const task = findTask(taskState, row?.dataset.taskId);
+    if (row && task)
+      animateChildrenCollapse(row, wrapper, children, Boolean(task.collapsed), { animate: false });
+    else cancelChildrenAnimation(children);
+  });
+  root.querySelectorAll('.is-new-shoot,.is-appearing,.is-revealed,.is-search-located').forEach((node) => {
+    node.classList.remove('is-new-shoot', 'is-appearing', 'is-revealed', 'is-search-located');
+  });
+}
+
 function settleCompletionFeedback(root, animate = true) {
   clearTimeout(completionSettleTimer);
   completionSettleTimer = 0;
   if (!root || !pendingCompletions.size) return;
-  const generation = ++completionSettleGeneration;
-  const pending = new Map(pendingCompletions);
-  const folds = [];
-  pending.forEach((node, id) => {
-    const task = findTask(taskState, id);
-    if (!task || !node.isConnected) return;
+  pendingCompletions.forEach((node, id) => {
     const row = node.querySelector(':scope > .task-row');
-    const children = node.querySelector(':scope > .children');
-    row?.classList.remove('is-blooming'); node.classList.remove('is-branch-blooming');
-    if (children) {
-      const collapsed = Boolean(task.collapsed);
-      if (!animate || children.classList.contains('is-collapsed') !== collapsed) {
-        folds.push(animateChildrenCollapse(row, node, children, collapsed, { animate }));
-      } else if (childrenAnimations.has(children)) folds.push(childrenAnimations.get(children).promise);
+    row?.classList.remove('is-blooming');
+    row?.style.removeProperty('min-height');
+    node.classList.remove('is-branch-blooming');
+    const task = findTask(taskState, id),
+      children = node.querySelector(':scope > .children');
+    if (
+      task &&
+      children &&
+      (!animate || children.classList.contains('is-collapsed') !== Boolean(task.collapsed))
+    ) {
+      animateChildrenCollapse(row, node, children, Boolean(task.collapsed), { animate });
     }
   });
-  const finish = () => {
-    if (generation !== completionSettleGeneration || !root.isConnected) return;
-    finishCompletionReorder(root, pending, animate);
-  };
-  // Manual expansion and reduced-motion paths must settle synchronously.
-  if (animate && !matchMedia('(prefers-reduced-motion: reduce)').matches && folds.length) Promise.all(folds).then(finish);
-  else finish();
+  pendingCompletions.clear();
 }
 
-function finishCompletionReorder(root, pending, animate) {
+function finishCompletionReorder(root, pending, animate, { keepFeedback = false } = {}) {
+  const changedNodes = new Set([...pending.values()].filter((node) => node.isConnected));
+  const containers = new Set([...changedNodes].map((node) => node.parentElement));
+  const nodes = [
+    ...new Set(
+      [...containers].flatMap((container) =>
+        [...container.children].filter((node) => node.matches('.task-node')),
+      ),
+    ),
+  ];
+  const before = new Map(nodes.map((node) => [node, node.getBoundingClientRect()]));
   cancelCompletionMoves();
-  const changedNodes = new Set([...pending.values()].filter(node => node.isConnected));
-  const containers = new Set([...changedNodes].map(node => node.parentElement));
-  const nodes = [...new Set([...containers].flatMap(container => [...container.children].filter(node => node.matches('.task-node'))))];
-  const before = new Map(nodes.map(node => [node, node.getBoundingClientRect()]));
   pending.forEach((node, id) => {
-    node.querySelector(':scope > .task-row')?.style.removeProperty('min-height');
-    if (pendingCompletions.get(id) === node) pendingCompletions.delete(id);
+    if (!keepFeedback) node.querySelector(':scope > .task-row')?.style.removeProperty('min-height');
+    if (!keepFeedback && pendingCompletions.get(id) === node) pendingCompletions.delete(id);
   });
-  containers.forEach(container => {
-    const parentId = container.matches('.children') ? container.parentElement.querySelector(':scope > .task-row')?.dataset.taskId : null;
+  containers.forEach((container) => {
+    const parentId = container.matches('.children')
+      ? container.parentElement.querySelector(':scope > .task-row')?.dataset.taskId
+      : null;
     const items = parentId ? findTask(taskState, parentId)?.children || [] : taskState;
-    const byId = new Map([...container.children].map(node => [node.querySelector(':scope > .task-row')?.dataset.taskId, node]));
+    const byId = new Map(
+      [...container.children].map((node) => [node.querySelector(':scope > .task-row')?.dataset.taskId, node]),
+    );
     let next = null;
-    [...getVisibleTaskTree(items)].reverse().forEach(task => {
+    [...getVisibleTaskTree(items)].reverse().forEach((task) => {
       const node = byId.get(task.id);
       if (!node) return;
       // Unchanged siblings already have the right relative order. Moving them all
@@ -2096,20 +2314,54 @@ function finishCompletionReorder(root, pending, animate) {
       next = node;
     });
   });
-  applyTreeBranchLayout(root);
-  if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const affected = new Set();
+  changedNodes.forEach((node) => {
+    const own = node.querySelector(':scope > .children');
+    if (own) affected.add(own);
+    for (
+      let branch = node.parentElement?.closest('.children');
+      branch;
+      branch = branch.parentElement?.closest('.children')
+    )
+      affected.add(branch);
+  });
+  applyTreeBranchLayout(root, { containers: affected });
+  if (
+    !animate ||
+    root.classList.contains('is-backgrounded') ||
+    matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+    return;
   const viewport = root.querySelector('.task-list').getBoundingClientRect();
   // Batch layout reads before starting transform-only animations. Hidden/offscreen cards stay static.
-  const moves = nodes.map(node => ({ node, first: before.get(node), last: node.getBoundingClientRect() }))
-    .filter(({ first, last }) => first.height && (first.bottom >= viewport.top && first.top <= viewport.bottom || last.bottom >= viewport.top && last.top <= viewport.bottom))
-    .filter(({ first, last }) => Math.abs(first.top - last.top) > .5 || Math.abs(first.left - last.left) > .5);
-  const moved = new Set(moves.map(move => move.node));
+  const moves = nodes
+    .map((node) => ({ node, first: before.get(node), last: node.getBoundingClientRect() }))
+    .filter(
+      ({ first, last }) =>
+        first.height &&
+        ((first.bottom >= viewport.top && first.top <= viewport.bottom) ||
+          (last.bottom >= viewport.top && last.top <= viewport.bottom)),
+    )
+    .filter(
+      ({ first, last }) => Math.abs(first.top - last.top) > 0.5 || Math.abs(first.left - last.left) > 0.5,
+    );
+  const moved = new Set(moves.map((move) => move.node));
   moves.forEach(({ node, first, last }) => {
     // A moving ancestor carries its subtree with it; do not apply the same displacement twice.
-    for (let ancestor = node.parentElement?.closest('.task-node'); ancestor; ancestor = ancestor.parentElement?.closest('.task-node')) {
+    for (
+      let ancestor = node.parentElement?.closest('.task-node');
+      ancestor;
+      ancestor = ancestor.parentElement?.closest('.task-node')
+    ) {
       if (moved.has(ancestor)) return;
     }
-    const animation = node.animate([{ transform: `translate(${first.left - last.left}px, ${first.top - last.top}px)` }, { transform: 'translate(0,0)' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    const animation = node.animate(
+      [
+        { transform: `translate(${first.left - last.left}px, ${first.top - last.top}px)` },
+        { transform: 'translate(0,0)' },
+      ],
+      { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' },
+    );
     completionMoves.add(animation);
     animation.finished.then(() => completionMoves.delete(animation)).catch(() => {});
   });
@@ -2138,6 +2390,7 @@ function restoreFailedTask(taskId) {
 
   animateTaskLayout(document.querySelector('.day-window'), () => {
     task.status = 'active';
+    reopenCompletedAncestors(taskState, task.id);
   });
 }
 
@@ -2147,10 +2400,14 @@ function softDeleteTask(taskId) {
     return;
   }
   const root = document.querySelector('.day-window');
-  animateTaskLayout(root, () => {
-    task.previousStatus = task.status;
-    task.status = 'deleted';
-  }, { disappearingTaskId: showDeletedTasks ? null : taskId });
+  animateTaskLayout(
+    root,
+    () => {
+      task.previousStatus = task.status;
+      task.status = 'deleted';
+    },
+    { disappearingTaskId: showDeletedTasks ? null : taskId },
+  );
 }
 
 function restoreTask(taskId) {
@@ -2161,6 +2418,7 @@ function restoreTask(taskId) {
   animateTaskLayout(document.querySelector('.day-window'), () => {
     task.status = task.previousStatus && task.previousStatus !== 'deleted' ? task.previousStatus : 'active';
     delete task.previousStatus;
+    if (task.status === 'active') reopenCompletedAncestors(taskState, task.id);
   });
 }
 
@@ -2174,11 +2432,14 @@ function destroyTask(taskId) {
 
 function replaceTaskRegion(current, next) {
   isReplacingTaskArea = true;
-  try { current?.replaceWith(next); }
-  finally { isReplacingTaskArea = false; }
+  try {
+    current?.replaceWith(next);
+  } finally {
+    isReplacingTaskArea = false;
+  }
 }
 
-function renderDayView(root) {
+function renderDayView(root, { gardenAnimate = true } = {}) {
   if (!root) {
     return;
   }
@@ -2202,6 +2463,7 @@ function renderDayView(root) {
   root.querySelector('.tag-popover-layer')?.replaceWith(createTagPopoverLayer());
   bindTagPopoverScrollHandler(root);
   queueTaskTreeLayout(root);
+  headerGarden?.update({ animate: gardenAnimate });
 }
 
 function renderTaskAreaOnly(root) {
@@ -2243,7 +2505,9 @@ function renderTagPopoverOnly(root) {
     row.classList.remove('has-tag-popover');
   });
   if (activeTagPopoverTaskId) {
-    root.querySelector(`.task-row[data-task-id="${activeTagPopoverTaskId}"]`)?.classList.add('has-tag-popover');
+    root
+      .querySelector(`.task-row[data-task-id="${activeTagPopoverTaskId}"]`)
+      ?.classList.add('has-tag-popover');
   }
   root.querySelector('.tag-popover-layer')?.replaceWith(createTagPopoverLayer());
 }
@@ -2307,10 +2571,14 @@ function animateExistingTaskRows(root, firstRects) {
     requestAnimationFrame(() => {
       row.style.transform = '';
       row.style.transition = 'transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)';
-      row.addEventListener('transitionend', () => {
-        row.style.transition = '';
-        row.style.transform = '';
-      }, { once: true });
+      row.addEventListener(
+        'transitionend',
+        () => {
+          row.style.transition = '';
+          row.style.transform = '';
+        },
+        { once: true },
+      );
     });
   });
 }
@@ -2362,221 +2630,6 @@ function showConfirmDialog({ title, message, confirmText = '确认', confirmStyl
 
   document.body.append(overlay);
   queueMicrotask(() => overlay.querySelector('.cancel')?.focus());
-}
-
-function saveAndPreviewTheme(settings) {
-  themeSettings = saveThemeSettings(settings);
-  applyThemeSettings(themeSettings);
-  notifyThemeUpdated(themeSettings);
-  return { ...themeSettings };
-}
-
-function notifyThemeUpdated(settings) {
-  const payload = { settings };
-  window.dispatchEvent(new CustomEvent('calendar://theme-updated', { detail: payload }));
-
-  if (!window.__TAURI__?.event?.emit) {
-    return;
-  }
-
-  window.__TAURI__.event.emit('calendar://theme-updated', payload).catch((error) => {
-    console.error(error);
-  });
-}
-
-function showSettingsDialog(initialTab = 'theme') {
-  closeDialog();
-  let draftTheme = { ...themeSettings };
-  let activeSettingsTab = initialTab;
-  const overlay = el('div', 'dialog-overlay settings-overlay');
-  overlay.innerHTML = `
-    <section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-      <header class="settings-header">
-        <div>
-          <h2 id="settings-title">设置</h2>
-          <p class="settings-subtitle">调整日视图体验和本地数据位置。</p>
-        </div>
-        <button class="icon-button settings-close" type="button" title="关闭" aria-label="关闭">×</button>
-      </header>
-      <div class="settings-body">
-        <aside class="settings-tabs">
-          <button class="settings-tab" type="button" data-settings-tab="theme">主题</button>
-          <button class="settings-tab" type="button" data-settings-tab="data">数据</button>
-        </aside>
-        <section class="settings-panel"></section>
-      </div>
-      <footer class="settings-actions">
-        <button class="dialog-button reset-theme" type="button">恢复默认</button>
-        <button class="dialog-button primary save-settings" type="button">完成</button>
-      </footer>
-    </section>
-  `;
-
-  const panel = overlay.querySelector('.settings-panel');
-  const resetThemeButton = overlay.querySelector('.reset-theme');
-
-  const renderThemePresets = () => {
-    const grid = overlay.querySelector('.theme-preset-grid');
-    if (!grid) {
-      return;
-    }
-    grid.replaceChildren();
-    getThemePresets(draftTheme.appearance).forEach((preset) => {
-      const button = el('button', `theme-preset${draftTheme.presetId === preset.id ? ' is-active' : ''}`);
-      button.type = 'button';
-      button.style.setProperty('--preset-base', preset.color);
-      button.style.setProperty('--preset-glow', preset.glow);
-      button.style.setProperty('--preset-warm', preset.warm);
-      button.innerHTML = `
-        <span class="theme-preset-swatch"></span>
-        <span>${preset.name}</span>
-      `;
-      button.addEventListener('click', () => {
-        draftTheme = saveAndPreviewTheme({ ...draftTheme, presetId: preset.id });
-        renderThemePresets();
-      });
-      grid.append(button);
-    });
-  };
-
-  const renderThemePanel = () => {
-    panel.innerHTML = `
-      <div class="settings-section-title">背景颜色</div>
-      <div class="theme-preset-grid"></div>
-      <label class="theme-opacity-control">
-        <span>背景不透明度</span>
-        <strong class="theme-opacity-value">${Math.round(draftTheme.opacity * 100)}%</strong>
-        <input class="theme-opacity-input" type="range" min="34" max="100" step="1" value="${Math.round(draftTheme.opacity * 100)}" />
-      </label>
-    `;
-    renderThemePresets();
-    const opacityInput = overlay.querySelector('.theme-opacity-input');
-    const opacityValue = overlay.querySelector('.theme-opacity-value');
-    opacityInput?.addEventListener('input', () => {
-      const opacity = Number(opacityInput.value) / 100;
-      opacityValue.textContent = `${opacityInput.value}%`;
-      draftTheme = saveAndPreviewTheme({ ...draftTheme, opacity });
-    });
-  };
-
-  const renderDataPanel = async () => {
-    panel.innerHTML = `
-      <div class="settings-section-title">数据存储位置</div>
-      <p class="storage-description">任务、随笔和长期标签都会从这里读取，并保存到这里。</p>
-      <div class="storage-path-card">
-        <span class="storage-path-label">${getStoragePathLabel(storageLocation)}</span>
-        <code class="storage-path-value">${escapeHtml(getStoragePathText(storageLocation))}</code>
-      </div>
-      <p class="storage-warning">切换位置不会迁移数据。要迁移，请先复制旧文件夹里的数据，再切换到新文件夹。</p>
-      <div class="storage-actions">
-        <button class="dialog-button choose-storage" type="button">选择文件夹</button>
-        <button class="dialog-button reset-storage" type="button">恢复默认位置</button>
-      </div>
-    `;
-
-    try {
-      storageLocation = await loadStorageLocation();
-      panel.querySelector('.storage-path-label').textContent = getStoragePathLabel(storageLocation);
-      panel.querySelector('.storage-path-value').textContent = getStoragePathText(storageLocation);
-    } catch (error) {
-      console.error(error);
-      panel.querySelector('.storage-path-value').textContent = '读取存储位置失败';
-    }
-
-    panel.querySelector('.choose-storage')?.addEventListener('click', async () => {
-      try {
-        const path = await pickDataDirectory();
-        if (!path) {
-          return;
-        }
-        showConfirmDialog({
-          title: '确认切换存储位置？',
-          message: '应用会改从新文件夹读取和保存数据。旧数据不会自动迁移；新文件夹为空时，内容也会显示为空。',
-          confirmText: '确认切换',
-          confirmStyle: 'primary',
-          onConfirm: async () => {
-            await flushDaySave();
-            storageLocation = await setStorageLocation(path);
-            await reloadCurrentStorage(document.querySelector('.day-window'));
-            renderDataPanel();
-            showToast('已切换数据存储位置');
-          },
-        });
-      } catch (error) {
-        console.error(error);
-        showToast('选择存储位置失败');
-      }
-    });
-
-    panel.querySelector('.reset-storage')?.addEventListener('click', () => {
-      showConfirmDialog({
-        title: '确认恢复默认存储位置？',
-        message: '应用会改回默认文件夹读取和保存数据。当前自定义文件夹里的数据不会被移动或删除。',
-        confirmText: '确认恢复',
-        confirmStyle: 'primary',
-        onConfirm: async () => {
-          await flushDaySave();
-          storageLocation = await resetStorageLocation();
-          await reloadCurrentStorage(document.querySelector('.day-window'));
-          renderDataPanel();
-          showToast('已恢复默认存储位置');
-        },
-      });
-    });
-  };
-
-  const renderSettingsTab = () => {
-    overlay.querySelectorAll('.settings-tab').forEach((button) => {
-      button.classList.toggle('is-active', button.dataset.settingsTab === activeSettingsTab);
-    });
-    resetThemeButton.hidden = activeSettingsTab !== 'theme';
-    if (activeSettingsTab === 'data') {
-      renderDataPanel();
-      return;
-    }
-    renderThemePanel();
-  };
-
-  overlay.querySelector('.reset-theme')?.addEventListener('click', () => {
-    draftTheme = saveAndPreviewTheme(defaultTheme);
-    renderThemePanel();
-  });
-  overlay.querySelectorAll('.settings-tab').forEach((button) => {
-    button.addEventListener('click', () => {
-      activeSettingsTab = button.dataset.settingsTab || 'theme';
-      renderSettingsTab();
-    });
-  });
-  overlay.querySelector('.save-settings')?.addEventListener('click', closeDialog);
-  overlay.querySelector('.settings-close')?.addEventListener('click', closeDialog);
-  overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) {
-      closeDialog();
-    }
-  });
-  overlay.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      closeDialog();
-    }
-  });
-
-  document.body.append(overlay);
-  renderSettingsTab();
-  queueMicrotask(() => overlay.querySelector('.theme-preset.is-active, .choose-storage')?.focus({ preventScroll: true }));
-}
-
-function getStoragePathText(location) {
-  if (!location) {
-    return '正在读取存储位置...';
-  }
-  return location.effectivePath || '读取存储位置失败';
-}
-
-function getStoragePathLabel(location) {
-  if (!location) {
-    return '当前存储位置';
-  }
-  return location.isDefault ? '默认位置' : '自定义位置';
 }
 
 function closeDialog() {

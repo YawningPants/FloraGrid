@@ -1,0 +1,154 @@
+{
+  "timestamp": "2026-10-25T08:18:56.229Z",
+  "conditions": {
+    "build": "release",
+    "window": "one hidden 390×900 window",
+    "logicalCpus": 16,
+    "identifier": "com.rizhi.perf3f198aff0a45",
+    "description": "New application identifier and isolated data. Native + child WebView2 processes only. Private working set is physical private pages; private commit is not resident RAM; summed working set double-counts shared pages. No foreground/GPU engine/power test."
+  },
+  "samples": [
+    {
+      "tasks": 50,
+      "ui": {
+        "visibility": "visible",
+        "nativeVisible": false,
+        "nativeFocused": false,
+        "nativeMinimized": false,
+        "backgrounded": true,
+        "tasks": 50,
+        "plants": 8,
+        "animations": [
+          "paused",
+          "paused",
+          "paused"
+        ]
+      },
+      "privateWorkingSetMiB": 107.8671875,
+      "privateCommitMiB": 285.4921875,
+      "summedWorkingSetMiB": 399.0625,
+      "cpuOneCorePercent": 0,
+      "cpuMachinePercent": 0,
+      "sampleWallMs": 3575.2289999999994,
+      "processes": [
+        {
+          "Id": 38680,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 92254208,
+          "PrivateMemorySize64": 42700800
+        },
+        {
+          "Id": 40468,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 14299136,
+          "PrivateMemorySize64": 2588672
+        },
+        {
+          "Id": 42156,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 24223744,
+          "PrivateMemorySize64": 7680000
+        },
+        {
+          "Id": 42812,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 128827392,
+          "PrivateMemorySize64": 39272448
+        },
+        {
+          "Id": 43216,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 41316352,
+          "PrivateMemorySize64": 12156928
+        },
+        {
+          "Id": 44168,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 87474176,
+          "PrivateMemorySize64": 186744832
+        },
+        {
+          "Id": 44896,
+          "ProcessName": "rizhi-perf",
+          "WorkingSet64": 30052352,
+          "PrivateMemorySize64": 8216576
+        }
+      ]
+    },
+    {
+      "tasks": 750,
+      "ui": {
+        "visibility": "visible",
+        "nativeVisible": false,
+        "nativeFocused": false,
+        "nativeMinimized": false,
+        "backgrounded": true,
+        "tasks": 750,
+        "plants": 8,
+        "animations": [
+          "paused",
+          "paused",
+          "paused"
+        ]
+      },
+      "privateWorkingSetMiB": 203.89453125,
+      "privateCommitMiB": 450.1484375,
+      "summedWorkingSetMiB": 501.421875,
+      "cpuOneCorePercent": 0,
+      "cpuMachinePercent": 0,
+      "sampleWallMs": 3557.401600000001,
+      "processes": [
+        {
+          "Id": 38680,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 191938560,
+          "PrivateMemorySize64": 142024704
+        },
+        {
+          "Id": 40468,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 14299136,
+          "PrivateMemorySize64": 2588672
+        },
+        {
+          "Id": 42156,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 24227840,
+          "PrivateMemorySize64": 7680000
+        },
+        {
+          "Id": 42812,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 129482752,
+          "PrivateMemorySize64": 40361984
+        },
+        {
+          "Id": 43216,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 41267200,
+          "PrivateMemorySize64": 12079104
+        },
+        {
+          "Id": 44168,
+          "ProcessName": "msedgewebview2",
+          "WorkingSet64": 94629888,
+          "PrivateMemorySize64": 259633152
+        },
+        {
+          "Id": 44896,
+          "ProcessName": "rizhi-perf",
+          "WorkingSet64": 29933568,
+          "PrivateMemorySize64": 7647232
+        }
+      ]
+    }
+  ],
+  "webview": {
+    "Browser": "Edg/155.0.4283.62",
+    "Protocol-Version": "1.3",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+    "V8-Version": "15.5.9.7",
+    "WebKit-Version": "537.36 (@aa3a7406ba8c53a83536df539f07124d73c899bd)",
+    "webSocketDebuggerUrl": "ws://127.0.0.1:64499/devtools/browser/c4e2e32d-90ef-4315-af99-244927de6fb8"
+  }
+}

@@ -38,13 +38,15 @@ export async function flushDaySave() {
   const day = pendingSave;
   pendingSave = null;
   saveInFlight = saveDay(day);
-  try { await saveInFlight; }
-  catch (error) {
+  try {
+    await saveInFlight;
+  } catch (error) {
     if (!pendingSave) pendingSave = day;
     window.dispatchEvent(new CustomEvent('calendar://save-error', { detail: { date: day.date } }));
     throw error;
+  } finally {
+    saveInFlight = null;
   }
-  finally { saveInFlight = null; }
   if (pendingSave) await flushDaySave();
 }
 

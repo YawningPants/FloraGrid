@@ -1,8 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyTaskDrop, flattenDragTree, getOriginDropTarget, isValidTaskDrop, locateDragSlot, projectTaskDrop } from '../src/domain/task-drag.mjs';
+import {
+  applyTaskDrop,
+  flattenDragTree,
+  getOriginDropTarget,
+  isValidTaskDrop,
+  locateDragSlot,
+  projectTaskDrop,
+} from '../src/domain/task-drag.mjs';
 
-const task = (id, status = 'active', children = [], collapsed = false) => ({ id, title: id, status, children, tags: [], collapsed });
+const task = (id, status = 'active', children = [], collapsed = false) => ({
+  id,
+  title: id,
+  status,
+  children,
+  tags: [],
+  collapsed,
+});
 const target = (parentId, beforeId, depth = 0) => ({ parentId, beforeId, depth });
 const ids = (items) => items.map((item) => item.id);
 
@@ -40,15 +54,22 @@ test('a parent moves as a complete subtree without changing statuses or data', (
 test('self, descendant, missing-parent, and stale-anchor drops never detach the source', () => {
   const items = [task('P', 'active', [task('C')]), task('B')];
   const snapshot = structuredClone(items);
-  for (const drop of [target('P', null, 1), target('C', null, 2), target('missing', null, 1), target(null, 'missing')]) {
+  for (const drop of [
+    target('P', null, 1),
+    target('C', null, 2),
+    target('missing', null, 1),
+    target(null, 'missing'),
+  ]) {
     assert.equal(applyTaskDrop(items, 'P', drop), null);
     assert.deepEqual(items, snapshot);
   }
 });
 
-test('new children require an active parent; existing siblings under a completed parent can reorder', () => {
+test('adding an active child reopens completion; existing completed siblings may still reorder', () => {
   const items = [task('A'), task('P', 'completed', [task('C1', 'completed'), task('C2', 'completed')])];
-  assert.equal(applyTaskDrop(items, 'A', target('P', 'C1', 1)), null);
+  const reopened = applyTaskDrop(items, 'A', target('P', 'C1', 1));
+  assert.equal(reopened.items[0].status, 'active');
+  assert.equal(items[1].status, 'completed');
   const result = applyTaskDrop(items, 'C2', target('P', 'C1', 1));
   assert.deepEqual(ids(result.items[1].children), ['C2', 'C1']);
 });
@@ -90,12 +111,22 @@ test('a child can outdent only at a genuine ancestor boundary', () => {
 });
 
 test('insertion slots are monotonic through tall and short cards', () => {
-  const rows = [{ id: 'A', top: 0, bottom: 40 }, { id: 'B', top: 45, bottom: 205 }, { id: 'C', top: 210, bottom: 250 }];
-  assert.deepEqual([-5, 19, 20, 70, 124, 125, 229, 230, 280].map((y) => locateDragSlot(rows, y)), [0, 0, 1, 1, 1, 2, 2, 3, 3]);
+  const rows = [
+    { id: 'A', top: 0, bottom: 40 },
+    { id: 'B', top: 45, bottom: 205 },
+    { id: 'C', top: 210, bottom: 250 },
+  ];
+  assert.deepEqual(
+    [-5, 19, 20, 70, 124, 125, 229, 230, 280].map((y) => locateDragSlot(rows, y)),
+    [0, 0, 1, 1, 1, 2, 2, 3, 3],
+  );
 });
 
 test('pointer inside the result preview keeps its logical boundary while surrounding cards move', () => {
-  const rows = [{ id: 'B', top: 0, bottom: 50 }, { id: 'C', top: 160, bottom: 210 }];
+  const rows = [
+    { id: 'B', top: 0, bottom: 50 },
+    { id: 'C', top: 160, bottom: 210 },
+  ];
   assert.equal(locateDragSlot(rows, 140, { top: 55, bottom: 155 }, { slotBeforeId: 'C' }), 1);
   assert.equal(locateDragSlot(rows, 186, { top: 55, bottom: 155 }, { slotBeforeId: 'C' }), 2);
 });
@@ -116,4 +147,25 @@ test('single-task and flat-list modes support a stable preview without inventing
   assert.ok(projected);
   assert.equal(applyTaskDrop(items, 'A', projected).changed, false);
   assert.equal(isValidTaskDrop([task('A'), task('P')], 'A', target('P', null, 1), { flat: true }), false);
+});
+
+test('closed all-complete families expose the correct hidden insertion anchor', () => {
+  for (const status of ['active', 'completed']) {
+    const items = [task('A'), task('P', status, [task('C', 'completed')], true)];
+    const rows = flattenDragTree(items, { excludedId: 'A' });
+    const projected = projectTaskDrop(items, 'A', rows, 1, 1);
+    assert.equal(projected.parentId, 'P');
+    assert.equal(projected.beforeId, 'C');
+    assert.equal(projected.slotBeforeId, 'C');
+    const changed = applyTaskDrop(items, 'A', projected);
+    assert.equal(changed.items[0].status, 'active');
+    assert.equal(changed.items[0].collapsed, false);
+    assert.deepEqual(
+      changed.items[0].children.map((t) => t.id),
+      ['A', 'C'],
+    );
+    assert.equal(items[1].collapsed, true);
+  }
+  for (const status of ['failed', 'deleted'])
+    assert.equal(applyTaskDrop([task('A'), task('P', status)], 'A', target('P', null, 1)), null);
 });

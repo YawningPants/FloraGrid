@@ -42,17 +42,36 @@ fn read_json(path: &Path) -> Result<Option<Value>, String> {
         .map(Some)
         .map_err(|e| format!("读取 {} 失败：{}", path.display(), e))
 }
-fn recover(app: &tauri::AppHandle) -> Result<(), String> {
-    let journal = data_root(app)?.join("reminder-transaction.json");
+pub(crate) fn recover(app: &tauri::AppHandle) -> Result<(), String> {
+    recover_at(&data_root(app)?)
+}
+// A chosen destination may also contain an interrupted reminder transaction.
+// Finish it before inspecting/migrating, so it cannot replay over the copied data.
+pub(crate) fn recover_at(root: &Path) -> Result<(), String> {
+    super::data_archive::recover(root)?;
+    let journal = root.join("reminder-transaction.json");
     if let Some(plan) = read_json(&journal)? {
+        let mut files = Vec::new();
         for day in plan["days"]
             .as_array()
             .ok_or("Invalid reminder transaction")?
         {
             let date = day["date"].as_str().ok_or("Invalid transaction date")?;
-            atomic_json(&day_file_path(app, date)?, day)?;
+            validate_date(date)?;
+            files.push(super::data_archive::FileRecord {
+                name: format!("days/{}/{}/{}.json", &date[..4], &date[5..7], date),
+                data: day.clone(),
+            });
         }
-        atomic_json(&state_path(app)?, &plan["store"])?;
+        files.push(super::data_archive::FileRecord {
+            name: "reminders.json".into(),
+            data: plan["store"].clone(),
+        });
+        super::data_archive::validate_records(&files)?;
+        for file in files {
+            let path = super::data_archive::safe_file(root, &file.name)?;
+            super::data_archive::atomic_value(&path, &file.data)?;
+        }
         fs::remove_file(journal).map_err(|e| e.to_string())?;
     }
     Ok(())

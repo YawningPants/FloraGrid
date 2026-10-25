@@ -1,0 +1,158 @@
+/* One decorative layer spans the date, tools and status summary without taking layout space. */
+.day-header-garden {
+  display: none;
+}
+html[data-appearance='botanical'] .day-window {
+  position: relative;
+  isolation: isolate;
+}
+html[data-appearance='botanical'] .day-header-garden:not([hidden]) {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+html[data-appearance='botanical'] .day-window > .day-header {
+  position: relative;
+  z-index: 3;
+}
+html[data-appearance='botanical'] .day-window > .window-titlebar {
+  position: relative;
+  z-index: 4;
+}
+html[data-appearance='botanical'] .day-window > .day-toolbar {
+  position: relative;
+  z-index: 2;
+}
+html[data-appearance='botanical'] .day-window > .task-scroll-region,
+html[data-appearance='botanical'] .day-window > .daily-notes {
+  position: relative;
+  z-index: 1;
+}
+.header-garden-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  stroke: none;
+}
+.garden-stem {
+  fill: none;
+  stroke: rgb(var(--branch-rgb));
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.garden-leaves {
+  fill: rgb(var(--branch-rgb));
+  opacity: var(--garden-leaf-opacity, 0.82);
+}
+.garden-leaf-back {
+  opacity: 0.62;
+}
+.garden-leaf-front {
+  opacity: 0.92;
+}
+.garden-growth {
+  opacity: var(--garden-rest-opacity, 0.34);
+  transform-origin: 0 0;
+}
+.garden-flower-head {
+  transform-origin: 0 0;
+}
+.garden-sway-group {
+  transform-box: view-box;
+}
+.day-header-garden.has-motion .garden-sway-0 {
+  animation: garden-sway-left 8700ms ease-in-out -1200ms infinite;
+}
+.day-header-garden.has-motion .garden-sway-1 {
+  animation: garden-sway-center 11300ms ease-in-out -4700ms infinite;
+}
+.day-header-garden.has-motion .garden-sway-2 {
+  animation: garden-sway-right 9900ms ease-in-out -2600ms infinite;
+}
+.day-header-garden.is-paused .garden-sway-group {
+  animation-play-state: paused;
+}
+/* The activity hook also settles finite task feedback and stops fold RAF loops. */
+.day-window.is-backgrounded * {
+  animation-play-state: paused !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+@keyframes garden-sway-left {
+  0%,
+  100% {
+    transform: rotate(-1.5deg);
+  }
+  24% {
+    transform: rotate(0.9deg);
+  }
+  57% {
+    transform: rotate(2.1deg);
+  }
+  76% {
+    transform: rotate(0.2deg);
+  }
+}
+@keyframes garden-sway-center {
+  0%,
+  100% {
+    transform: rotate(0.7deg);
+  }
+  28% {
+    transform: rotate(-1.9deg);
+  }
+  52% {
+    transform: rotate(-0.3deg);
+  }
+  77% {
+    transform: rotate(1.7deg);
+  }
+}
+@keyframes garden-sway-right {
+  0%,
+  100% {
+    transform: rotate(1.6deg);
+  }
+  21% {
+    transform: rotate(0.2deg);
+  }
+  55% {
+    transform: rotate(-2.2deg);
+  }
+  82% {
+    transform: rotate(-0.5deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .day-header-garden .garden-sway-group {
+    animation: none !important;
+  }
+}
+
+/* Depth uses shared SVG paint buckets plus opacity; no extra blur/filter or per-plant sway. */
+.garden-plant {
+  opacity: 1;
+  transition: opacity 420ms ease;
+}
+.garden-plant[data-layer='back'] {
+  opacity: 0.52;
+}
+.garden-flower-depth {
+  transform: scale(1);
+  transition: transform 420ms ease;
+}
+.garden-plant[data-layer='back'] .garden-flower-depth {
+  transform: scale(0.86);
+}
+@media (prefers-reduced-motion: reduce) {
+  .garden-plant,
+  .garden-flower-depth {
+    transition: none;
+  }
+}

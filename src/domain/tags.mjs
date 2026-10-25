@@ -1,4 +1,24 @@
-export const tagColors = ['#8fb6d3', '#aaa0c8', '#d09aac', '#d0aa7e', '#c5b985', '#99b888', '#8fc2b9', '#abb9c2'];
+// Preserve colors for legacy tasks whose tags were stored as plain strings.
+export const legacyTagPalette = {
+  工作: '#8fb6d3',
+  项目A: '#8fc2b9',
+  学习: '#aaa0c8',
+  健康: '#99b888',
+  设计: '#d0aa7e',
+  生日: '#d09aac',
+  复盘: '#abb9c2',
+};
+
+export const tagColors = [
+  '#8fb6d3',
+  '#aaa0c8',
+  '#d09aac',
+  '#d0aa7e',
+  '#c5b985',
+  '#99b888',
+  '#8fc2b9',
+  '#abb9c2',
+];
 
 const legacyTagColorMap = {
   '#58a6ff': '#8fb6d3',
@@ -68,9 +88,8 @@ export function normalizeTags(tags, fallbackPalette = {}) {
 }
 
 export function normalizeTagTemplates(data) {
-  const groups = Array.isArray(data?.groups) && data.groups.length > 0
-    ? data.groups
-    : createDefaultTagGroups();
+  const groups =
+    Array.isArray(data?.groups) && data.groups.length > 0 ? data.groups : createDefaultTagGroups();
 
   return {
     version: data?.version || 1,
@@ -78,11 +97,13 @@ export function normalizeTagTemplates(data) {
       id: group.id || `group-${crypto.randomUUID()}`,
       name: (group.name || '未命名分组').trim(),
       tags: Array.isArray(group.tags)
-        ? group.tags.map((tag) => ({
-            id: tag.id || `preset-${crypto.randomUUID()}`,
-            text: (tag.text || tag.name || '').trim(),
-            color: normalizeTagColor(tag.color || pickUnusedColor([])),
-          })).filter((tag) => tag.text)
+        ? group.tags
+            .map((tag) => ({
+              id: tag.id || `preset-${crypto.randomUUID()}`,
+              text: (tag.text || tag.name || '').trim(),
+              color: normalizeTagColor(tag.color || pickUnusedColor([])),
+            }))
+            .filter((tag) => tag.text)
         : [],
     })),
   };

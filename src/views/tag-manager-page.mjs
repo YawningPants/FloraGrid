@@ -1,3 +1,4 @@
+import { taskColorInk } from '../domain/color-ink.mjs';
 import { createTagGroup, createTagTemplate, normalizeTagTemplates, tagColors } from '../domain/tags.mjs';
 import { applyThemeSettings, loadThemeSettings } from '../domain/theme.mjs';
 import { loadTagTemplates, saveTagTemplates } from '../storage/tag-template-storage.mjs';
@@ -36,12 +37,15 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
   page.hidden = true;
 
   const sorter = createTagManagerSort({
-    root: page, scroller: body, canStart: () => active && !draft && !saving && !loading && !flyout && !confirmation,
-    onCommit: (type, groupId, ids) => commit((next) => {
-      const items = type === 'group' ? next.groups : next.groups.find((group) => group.id === groupId).tags;
-      const byId = new Map(items.map((item) => [item.id, item]));
-      items.splice(0, items.length, ...ids.map((id) => byId.get(id)));
-    }),
+    root: page,
+    scroller: body,
+    canStart: () => active && !draft && !saving && !loading && !flyout && !confirmation,
+    onCommit: (type, groupId, ids) =>
+      commit((next) => {
+        const items = type === 'group' ? next.groups : next.groups.find((group) => group.id === groupId).tags;
+        const byId = new Map(items.map((item) => [item.id, item]));
+        items.splice(0, items.length, ...ids.map((id) => byId.get(id)));
+      }),
   });
 
   function setStatus(text, error = false) {
@@ -78,34 +82,60 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
     abort.abort();
     page.remove();
   }
-  page.querySelector('.tag-manager-new-button').addEventListener('click', () => beginDraft({ kind: 'group', name: '' }), options);
-  document.addEventListener('pointerdown', (event) => {
-    if (flyout && !flyout.node.contains(event.target) && !flyout.anchor.contains(event.target)) closeFlyout();
-  }, { ...options, capture: true });
+  page
+    .querySelector('.tag-manager-new-button')
+    .addEventListener('click', () => beginDraft({ kind: 'group', name: '' }), options);
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (flyout && !flyout.node.contains(event.target) && !flyout.anchor.contains(event.target))
+        closeFlyout();
+    },
+    { ...options, capture: true },
+  );
   body.addEventListener('scroll', () => closeFlyout(), options);
   window.addEventListener('resize', () => closeFlyout(), options);
-  window.addEventListener('keydown', (event) => {
-    if (!active || !page.isConnected) return;
-    if (event.key === 'Tab' && confirmation) {
-      const controls = [...confirmation.querySelectorAll('button:not(:disabled)')];
-      const index = controls.indexOf(document.activeElement);
+  window.addEventListener(
+    'keydown',
+    (event) => {
+      if (!active || !page.isConnected) return;
+      if (event.key === 'Tab' && confirmation) {
+        const controls = [...confirmation.querySelectorAll('button:not(:disabled)')];
+        const index = controls.indexOf(document.activeElement);
+        event.preventDefault();
+        controls[(index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length]?.focus();
+        return;
+      }
+      if (event.key !== 'Escape' || event.isComposing) return;
+      if (
+        !saving &&
+        !confirmation &&
+        !flyout &&
+        !draft &&
+        !document.body.classList.contains('is-tag-sorting')
+      ) {
+        // A pending hold also needs cancelling; otherwise let Settings handle Escape.
+        if (!sorter.cancel()) return;
+      }
       event.preventDefault();
-      controls[(index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length]?.focus();
-      return;
-    }
-    if (event.key !== 'Escape' || event.isComposing) return;
-    if (!saving && !confirmation && !flyout && !draft && !document.body.classList.contains('is-tag-sorting')) {
-      // A pending hold also needs cancelling; otherwise let Settings handle Escape.
-      if (!sorter.cancel()) return;
-    }
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if (saving) return;
-    if (confirmation) { dismissConfirmation(); return; }
-    if (sorter.cancel()) return;
-    if (flyout) { closeFlyout({ focus: true }); return; }
-    if (draft) { cancelDraft(); return; }
-  }, { ...options, capture: true });
+      event.stopImmediatePropagation();
+      if (saving) return;
+      if (confirmation) {
+        dismissConfirmation();
+        return;
+      }
+      if (sorter.cancel()) return;
+      if (flyout) {
+        closeFlyout({ focus: true });
+        return;
+      }
+      if (draft) {
+        cancelDraft();
+        return;
+      }
+    },
+    { ...options, capture: true },
+  );
   const refreshTheme = () => applyThemeSettings(loadThemeSettings());
   window.addEventListener('calendar://theme-updated', refreshTheme, options);
   const refreshTemplates = () => {
@@ -115,14 +145,25 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
     } else load();
   };
   window.addEventListener('calendar://storage-updated', refreshTemplates, options);
-  window.addEventListener('storage', (event) => {
-    if (event.key === 'desktop-calendar-theme') refreshTheme();
-  }, options);
+  window.addEventListener(
+    'storage',
+    (event) => {
+      if (event.key === 'desktop-calendar-theme') refreshTheme();
+    },
+    options,
+  );
   if (window.__TAURI__?.event?.listen) {
-    for (const [name, handler] of [['calendar://theme-updated', refreshTheme], ['calendar://storage-updated', refreshTemplates]]) {
-      window.__TAURI__.event.listen(name, handler).then((unlisten) => {
-        if (abort.signal.aborted) unlisten(); else abort.signal.addEventListener('abort', unlisten, { once: true });
-      }).catch(console.error);
+    for (const [name, handler] of [
+      ['calendar://theme-updated', refreshTheme],
+      ['calendar://storage-updated', refreshTemplates],
+    ]) {
+      window.__TAURI__.event
+        .listen(name, handler)
+        .then((unlisten) => {
+          if (abort.signal.aborted) unlisten();
+          else abort.signal.addEventListener('abort', unlisten, { once: true });
+        })
+        .catch(console.error);
     }
   }
   window.addEventListener('beforeunload', destroy, { ...options, once: true });
@@ -130,14 +171,19 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
   function render() {
     closeFlyout();
     const scrollTop = body.scrollTop;
-    const editing = page.contains(document.activeElement) && document.activeElement.matches('.tag-manager-draft-input');
-    const selection = editing ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
+    const editing =
+      page.contains(document.activeElement) && document.activeElement.matches('.tag-manager-draft-input');
+    const selection = editing
+      ? [document.activeElement.selectionStart, document.activeElement.selectionEnd]
+      : null;
     list.replaceChildren();
     page.querySelector('.tag-manager-new-group').replaceChildren();
     if (!templates) return;
-    if (draft?.kind === 'group' && !draft.groupId) page.querySelector('.tag-manager-new-group').append(createEditor());
+    if (draft?.kind === 'group' && !draft.groupId)
+      page.querySelector('.tag-manager-new-group').append(createEditor());
     templates.groups.forEach((group) => list.append(createGroupCard(group)));
-    page.querySelector('.tag-manager-summary').textContent = `${templates.groups.length} 个分组 · ${templates.groups.reduce((sum, group) => sum + group.tags.length, 0)} 个标签`;
+    page.querySelector('.tag-manager-summary').textContent =
+      `${templates.groups.length} 个分组 · ${templates.groups.reduce((sum, group) => sum + group.tags.length, 0)} 个标签`;
     body.scrollTop = scrollTop;
     if (selection) {
       const input = page.querySelector('.tag-manager-draft-input');
@@ -166,10 +212,17 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
       toggle.append(name, count);
       toggle.addEventListener('click', () => {
         if (saving) return;
-        if (draft?.groupId === group.id) { focusDraft(); return; }
-        if (collapsed.has(group.id)) collapsed.delete(group.id); else collapsed.add(group.id);
+        if (draft?.groupId === group.id) {
+          focusDraft();
+          return;
+        }
+        if (collapsed.has(group.id)) collapsed.delete(group.id);
+        else collapsed.add(group.id);
         render();
-        [...list.children].find((item) => item.dataset.groupId === group.id)?.querySelector('.tag-group-toggle')?.focus({ preventScroll: true });
+        [...list.children]
+          .find((item) => item.dataset.groupId === group.id)
+          ?.querySelector('.tag-group-toggle')
+          ?.focus({ preventScroll: true });
       });
       header.append(toggle);
       const more = actionButton('more', `管理分组 ${group.name}`, 'tag-group-more');
@@ -177,7 +230,10 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
       more.setAttribute('aria-expanded', 'false');
       more.addEventListener('click', () => {
         if (saving || loading) return;
-        if (flyout?.anchor === more) { closeFlyout(); return; }
+        if (flyout?.anchor === more) {
+          closeFlyout();
+          return;
+        }
         const menu = el('div', 'tag-group-menu');
         menu.setAttribute('role', 'menu');
         const rename = actionButton('edit', '重命名', 'tag-group-rename', true);
@@ -185,10 +241,14 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
         [rename, remove].forEach((button) => button.setAttribute('role', 'menuitem'));
         remove.disabled = templates.groups.length <= 1;
         if (remove.disabled) remove.title = '至少保留一个分组';
-        rename.addEventListener('click', () => beginDraft({ kind: 'group', groupId: group.id, name: group.name }));
-        remove.addEventListener('click', () => confirmDelete('分组', group.name, (next) => {
-          next.groups = next.groups.filter((item) => item.id !== group.id);
-        }));
+        rename.addEventListener('click', () =>
+          beginDraft({ kind: 'group', groupId: group.id, name: group.name }),
+        );
+        remove.addEventListener('click', () =>
+          confirmDelete('分组', group.name, (next) => {
+            next.groups = next.groups.filter((item) => item.id !== group.id);
+          }),
+        );
         menu.append(rename, remove);
         openFlyout(more, menu);
       });
@@ -204,12 +264,21 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
         const chip = el('div', 'tag-manager-chip');
         chip.dataset.sortId = template.id;
         chip.style.setProperty('--tag-color', template.color);
+        chip.style.setProperty('--tag-ink', taskColorInk(chip.style.getPropertyValue('--tag-color')));
         const edit = el('button', 'tag-manager-chip-edit');
         edit.type = 'button';
         edit.dataset.sortPress = '';
         edit.textContent = template.text;
         edit.title = `编辑标签 ${template.text}（长按拖拽排序，Alt + 方向键也可排序）`;
-        edit.addEventListener('click', () => beginDraft({ kind: 'tag', groupId: group.id, tagId: template.id, name: template.text, color: template.color }));
+        edit.addEventListener('click', () =>
+          beginDraft({
+            kind: 'tag',
+            groupId: group.id,
+            tagId: template.id,
+            name: template.text,
+            color: template.color,
+          }),
+        );
         chip.classList.toggle('is-editing', draft?.tagId === template.id);
         chip.append(edit);
         tags.append(chip);
@@ -218,7 +287,9 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
       if (draft?.kind === 'tag' && draft.groupId === group.id) content.append(createEditor());
       else {
         const add = actionButton('plus', '添加标签', 'tag-manager-add-tag', true);
-        add.addEventListener('click', () => beginDraft({ kind: 'tag', groupId: group.id, name: '', color: tagColors[0] }));
+        add.addEventListener('click', () =>
+          beginDraft({ kind: 'tag', groupId: group.id, name: '', color: tagColors[0] }),
+        );
         content.append(add);
       }
       card.append(content);
@@ -229,7 +300,11 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
   function beginDraft(next) {
     if (saving || loading || !templates) return;
     closeFlyout();
-    if (draft) { focusDraft(); setStatus('请先保存或取消当前编辑'); return; }
+    if (draft) {
+      focusDraft();
+      setStatus('请先保存或取消当前编辑');
+      return;
+    }
     draft = next;
     setStatus('编辑中');
     collapsed.delete(next.groupId);
@@ -249,21 +324,34 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
     draft = null;
     render();
     setStatus('已取消编辑');
-    if (needsReload) { needsReload = false; load(); }
+    if (needsReload) {
+      needsReload = false;
+      load();
+    }
     const card = [...list.children].find((item) => item.dataset.groupId === previous?.groupId);
-    const chip = [...(card?.querySelectorAll('.tag-manager-chip') || [])].find((item) => item.dataset.sortId === previous?.tagId);
-    (chip?.querySelector('.tag-manager-chip-edit') || card?.querySelector('.tag-manager-add-tag') || page.querySelector('.tag-manager-new-button')).focus({ preventScroll: true });
+    const chip = [...(card?.querySelectorAll('.tag-manager-chip') || [])].find(
+      (item) => item.dataset.sortId === previous?.tagId,
+    );
+    (
+      chip?.querySelector('.tag-manager-chip-edit') ||
+      card?.querySelector('.tag-manager-add-tag') ||
+      page.querySelector('.tag-manager-new-button')
+    ).focus({ preventScroll: true });
   }
 
   function createEditor() {
     const editor = el('form', `tag-manager-editor${draft.kind === 'tag' ? ' is-tag' : ' is-group'}`);
     if (draft.kind === 'tag') {
       editor.style.setProperty('--tag-color', draft.color);
+      editor.style.setProperty('--tag-ink', taskColorInk(editor.style.getPropertyValue('--tag-color')));
       const color = actionButton('', '选择标签颜色', 'tag-manager-color-dot');
       color.setAttribute('aria-haspopup', 'dialog');
       color.setAttribute('aria-expanded', 'false');
       color.addEventListener('click', () => {
-        if (flyout?.anchor === color) { closeFlyout(); return; }
+        if (flyout?.anchor === color) {
+          closeFlyout();
+          return;
+        }
         const palette = el('div', 'tag-manager-palette');
         palette.setAttribute('role', 'dialog');
         palette.setAttribute('aria-label', '标签颜色');
@@ -272,12 +360,14 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
           const swatch = el('button', 'tag-color-swatch');
           swatch.type = 'button';
           swatch.style.setProperty('--swatch', value);
+          swatch.style.setProperty('--swatch-ink', taskColorInk(swatch.style.getPropertyValue('--swatch')));
           swatch.setAttribute('aria-label', colorNames[index]);
           swatch.setAttribute('aria-pressed', String(draft.color === value));
           swatch.classList.toggle('is-selected', draft.color === value);
           swatch.addEventListener('click', () => {
             draft.color = value;
             editor.style.setProperty('--tag-color', value);
+            editor.style.setProperty('--tag-ink', taskColorInk(editor.style.getPropertyValue('--tag-color')));
             closeFlyout({ focus: true });
           });
           palette.append(swatch);
@@ -297,18 +387,26 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
       input.removeAttribute('aria-invalid');
       setStatus('编辑中');
     });
-    input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && event.isComposing) event.preventDefault(); });
-    const save = actionButton('check', draft.tagId || draft.groupId && draft.kind === 'group' ? '保存修改' : '确认添加', 'tag-manager-draft-save');
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && event.isComposing) event.preventDefault();
+    });
+    const save = actionButton(
+      'check',
+      draft.tagId || (draft.groupId && draft.kind === 'group') ? '保存修改' : '确认添加',
+      'tag-manager-draft-save',
+    );
     save.type = 'submit';
     const cancel = actionButton('close', '取消编辑', 'tag-manager-draft-cancel');
     cancel.addEventListener('click', cancelDraft);
     editor.append(input, save, cancel);
     if (draft.tagId) {
       const remove = actionButton('trash', '删除标签', 'tag-manager-draft-delete');
-      remove.addEventListener('click', () => confirmDelete('标签', draft.name, (next) => {
-        const group = next.groups.find((item) => item.id === draft.groupId);
-        group.tags = group.tags.filter((item) => item.id !== draft.tagId);
-      }));
+      remove.addEventListener('click', () =>
+        confirmDelete('标签', draft.name, (next) => {
+          const group = next.groups.find((item) => item.id === draft.groupId);
+          group.tags = group.tags.filter((item) => item.id !== draft.tagId);
+        }),
+      );
       editor.append(remove);
     }
     editor.addEventListener('submit', (event) => {
@@ -321,16 +419,24 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
         return;
       }
       const current = { ...draft, name: draft.name.trim() };
-      commit((next) => {
-        if (current.kind === 'group') {
-          if (current.groupId) next.groups.find((group) => group.id === current.groupId).name = current.name;
-          else next.groups.push(createTagGroup(current.name));
-        } else {
-          const group = next.groups.find((item) => item.id === current.groupId);
-          if (current.tagId) Object.assign(group.tags.find((tag) => tag.id === current.tagId), { text: current.name, color: current.color });
-          else group.tags.push(createTagTemplate(current.name, current.color));
-        }
-      }, { clearDraft: true });
+      commit(
+        (next) => {
+          if (current.kind === 'group') {
+            if (current.groupId)
+              next.groups.find((group) => group.id === current.groupId).name = current.name;
+            else next.groups.push(createTagGroup(current.name));
+          } else {
+            const group = next.groups.find((item) => item.id === current.groupId);
+            if (current.tagId)
+              Object.assign(
+                group.tags.find((tag) => tag.id === current.tagId),
+                { text: current.name, color: current.color },
+              );
+            else group.tags.push(createTagTemplate(current.name, current.color));
+          }
+        },
+        { clearDraft: true },
+      );
     });
     return editor;
   }
@@ -348,7 +454,9 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
     setStatus('正在保存…');
     page.setAttribute('aria-busy', 'true');
     const controls = [...page.querySelectorAll('button,input')].map((node) => [node, node.disabled]);
-    controls.forEach(([node]) => { node.disabled = true; });
+    controls.forEach(([node]) => {
+      node.disabled = true;
+    });
     try {
       const next = normalizeTagTemplates(templates);
       change(next);
@@ -359,7 +467,11 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
       render();
       setStatus('已保存');
       await notifyTagTemplatesUpdated();
-      try { await onSaved?.(templates); } catch (error) { console.error(error); }
+      try {
+        await onSaved?.(templates);
+      } catch (error) {
+        console.error(error);
+      }
       return true;
     } catch (error) {
       console.error(error);
@@ -370,9 +482,14 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
     } finally {
       saving = false;
       page.removeAttribute('aria-busy');
-      controls.forEach(([node, disabled]) => { node.disabled = disabled; });
+      controls.forEach(([node, disabled]) => {
+        node.disabled = disabled;
+      });
       if (!abort.signal.aborted) onBusyChange?.({ busy: false, saved });
-      if (needsReload && !draft && !abort.signal.aborted) { needsReload = false; load(); }
+      if (needsReload && !draft && !abort.signal.aborted) {
+        needsReload = false;
+        load();
+      }
     }
   }
 
@@ -386,7 +503,11 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
   function confirmDelete(kind, name, change) {
     closeFlyout();
     if (saving) return;
-    if (draft && !(kind === '标签' && draft.tagId)) { focusDraft(); setStatus('请先保存或取消当前编辑'); return; }
+    if (draft && !(kind === '标签' && draft.tagId)) {
+      focusDraft();
+      setStatus('请先保存或取消当前编辑');
+      return;
+    }
     confirmation = el('div', 'dialog-overlay confirm-overlay');
     const dialog = el('section', 'confirm-dialog');
     dialog.setAttribute('role', 'dialog');
@@ -409,12 +530,17 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
       remove.disabled = true;
       cancel.disabled = true;
       if (await commit(change, { clearDraft: true })) dismissConfirmation();
-      else { remove.disabled = false; cancel.disabled = false; }
+      else {
+        remove.disabled = false;
+        cancel.disabled = false;
+      }
     });
     actions.append(cancel, remove);
     dialog.append(title, message, actions);
     confirmation.append(dialog);
-    confirmation.addEventListener('click', (event) => { if (event.target === confirmation && !saving) dismissConfirmation(); });
+    confirmation.addEventListener('click', (event) => {
+      if (event.target === confirmation && !saving) dismissConfirmation();
+    });
     document.body.append(confirmation);
     page.inert = true;
     cancel.focus();
@@ -451,7 +577,10 @@ export function createTagManagerPanel({ onSaved, onBusyChange } = {}) {
     canLeave: () => !saving && !confirmation,
     setActive(value) {
       if (!value && (saving || confirmation)) return false;
-      if (!value) { closeFlyout(); sorter.cancel(); }
+      if (!value) {
+        closeFlyout();
+        sorter.cancel();
+      }
       active = value;
       page.hidden = !value;
       page.inert = !value;
@@ -487,8 +616,11 @@ function sortHandle(label) {
 
 async function notifyTagTemplatesUpdated() {
   if (window.__TAURI__?.event?.emit) {
-    try { await window.__TAURI__.event.emit('calendar://tag-templates-updated', {}); }
-    catch (error) { console.error(error); }
+    try {
+      await window.__TAURI__.event.emit('calendar://tag-templates-updated', {});
+    } catch (error) {
+      console.error(error);
+    }
   }
   window.dispatchEvent(new CustomEvent('calendar://tag-templates-updated'));
 }

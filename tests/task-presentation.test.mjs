@@ -7,7 +7,7 @@ import { flowerVariants } from '../src/domain/flowers.mjs';
 test('only root tags are presented by default; the retained child feature can be enabled', () => {
   assert.equal(childTaskTagsEnabled, false);
   assert.equal(canPresentTaskTags(0), true);
-  for (const depth of [1,2,3,10]) {
+  for (const depth of [1, 2, 3, 10]) {
     assert.equal(canPresentTaskTags(depth), false);
     assert.equal(canPresentTaskTags(depth, true), true);
   }
@@ -15,8 +15,8 @@ test('only root tags are presented by default; the retained child feature can be
 
 test('new flowers stay within the existing eleven-petal rendering ceiling', () => {
   for (const variant of flowerVariants) {
-    const markup = flowerMarkup({flower:{variant,tone:'cream'}});
+    const markup = flowerMarkup({ flower: { variant, tone: 'cream' } });
     assert.ok((markup.match(/class="flower-petal/g) || []).length <= 12); // includes the group name
-    assert.equal(flowerMarkup({flower:{variant,tone:'cream'}}), markup);
+    assert.equal(flowerMarkup({ flower: { variant, tone: 'cream' } }), markup);
   }
 });

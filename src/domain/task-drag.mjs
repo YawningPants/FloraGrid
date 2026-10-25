@@ -1,6 +1,17 @@
-import { canAcceptChildTask, canMoveTask, findTask, getTaskLocation, getRenderableTasks, hasDescendant, taskStatusMeta } from './tasks.mjs';
+import {
+  canMoveTask,
+  findTask,
+  getTaskLocation,
+  getRenderableTasks,
+  hasDescendant,
+  reopenCompletedAncestors,
+  taskStatusMeta,
+} from './tasks.mjs';
 
-export function flattenDragTree(items, { showDeletedTasks = false, excludedId = null, expandedIds = new Set(), flat = false } = {}) {
+export function flattenDragTree(
+  items,
+  { showDeletedTasks = false, excludedId = null, expandedIds = new Set(), flat = false } = {},
+) {
   const rows = [];
   const visit = (tasks, parentId, depth) => {
     getRenderableTasks(tasks, showDeletedTasks).forEach((task) => {
@@ -33,9 +44,10 @@ export function getOriginDropTarget(items, taskId, options = {}) {
 // Only the measured, untransformed layout is passed here. The preview is not a candidate row.
 export function locateDragSlot(rows, pointerY, preview, currentTarget) {
   if (preview && currentTarget && pointerY >= preview.top && pointerY <= preview.bottom) {
-    const index = currentTarget.slotBeforeId === null
-      ? rows.length
-      : rows.findIndex((row) => row.id === currentTarget.slotBeforeId);
+    const index =
+      currentTarget.slotBeforeId === null
+        ? rows.length
+        : rows.findIndex((row) => row.id === currentTarget.slotBeforeId);
     if (index !== -1) return index;
   }
   const index = rows.findIndex((row) => pointerY < (row.top + row.bottom) / 2);
@@ -43,7 +55,8 @@ export function locateDragSlot(rows, pointerY, preview, currentTarget) {
 }
 
 export function projectTaskDrop(items, taskId, rows, slot, depth, options = {}) {
-  if (!Number.isInteger(slot) || slot < 0 || slot > rows.length || !Number.isInteger(depth) || depth < 0) return null;
+  if (!Number.isInteger(slot) || slot < 0 || slot > rows.length || !Number.isInteger(depth) || depth < 0)
+    return null;
   const previous = rows[slot - 1];
   const next = rows[slot];
   const minDepth = next?.depth || 0;
@@ -52,7 +65,10 @@ export function projectTaskDrop(items, taskId, rows, slot, depth, options = {}) 
 
   let parentId = null;
   if (depth > 0) {
-    const parent = rows.slice(0, slot).reverse().find((row) => row.depth === depth - 1);
+    const parent = rows
+      .slice(0, slot)
+      .reverse()
+      .find((row) => row.depth === depth - 1);
     if (!parent) return null;
     parentId = parent.id;
   }
@@ -62,21 +78,45 @@ export function projectTaskDrop(items, taskId, rows, slot, depth, options = {}) 
     depth,
     slotBeforeId: next?.id || null,
   };
+  const parent = parentId && findTask(items, parentId),
+    source = getTaskLocation(items, taskId);
+  if (
+    parent?.collapsed &&
+    source &&
+    source.parentId !== parentId &&
+    !rows.some((row) => row.parentId === parentId)
+  ) {
+    // A closed family has no visible child anchors. Insert after this status group,
+    // before the first later status, rather than falsely testing the hidden list's end.
+    const order = taskStatusMeta[source.task.status].order;
+    const boundary = getRenderableTasks(parent.children || [], options.showDeletedTasks).find(
+      (child) => taskStatusMeta[child.status].order > order,
+    );
+    target.beforeId = boundary?.id || null;
+    if (boundary) target.slotBeforeId = boundary.id;
+  }
   return isValidTaskDrop(items, taskId, target, options) ? target : null;
 }
 
-export function isValidTaskDrop(items, taskId, target, { showDeletedTasks = false, searchQuery = '', flat = false } = {}) {
+export function isValidTaskDrop(
+  items,
+  taskId,
+  target,
+  { showDeletedTasks = false, searchQuery = '', flat = false } = {},
+) {
   const origin = getTaskLocation(items, taskId);
   if (!origin || !target || !canMoveTask(origin.task, searchQuery)) return false;
   if (target.parentId === taskId || hasDescendant(origin.task, target.parentId)) return false;
   if (flat && target.parentId !== null) return false;
   const parent = target.parentId === null ? null : findTask(items, target.parentId);
   if (target.parentId !== null && !parent) return false;
-  if (parent && origin.parentId !== parent.id && !canAcceptChildTask(parent)) return false;
-  // Existing children may still be reordered under a completed parent, but cannot be added to it.
-  const siblings = getRenderableTasks(childrenOf(items, target.parentId) || [], showDeletedTasks)
-    .filter((task) => task.id !== taskId);
-  const index = target.beforeId === null ? siblings.length : siblings.findIndex((task) => task.id === target.beforeId);
+  if (parent && origin.parentId !== parent.id && !['active', 'completed'].includes(parent.status))
+    return false;
+  const siblings = getRenderableTasks(childrenOf(items, target.parentId) || [], showDeletedTasks).filter(
+    (task) => task.id !== taskId,
+  );
+  const index =
+    target.beforeId === null ? siblings.length : siblings.findIndex((task) => task.id === target.beforeId);
   if (index < 0) return false;
   const order = taskStatusMeta[origin.task.status]?.order;
   const previousOrder = taskStatusMeta[siblings[index - 1]?.status]?.order ?? -Infinity;
@@ -101,8 +141,12 @@ export function applyTaskDrop(items, taskId, target, options = {}) {
   const parent = target.parentId === null ? null : findTask(nextItems, target.parentId);
   if (parent) parent.children ||= [];
   const destination = parent ? parent.children : nextItems;
-  const insertAt = target.beforeId === null ? destination.length : destination.findIndex((task) => task.id === target.beforeId);
+  const insertAt =
+    target.beforeId === null
+      ? destination.length
+      : destination.findIndex((task) => task.id === target.beforeId);
   destination.splice(insertAt, 0, moved);
+  if (moved.status === 'active') reopenCompletedAncestors(nextItems, moved.id);
   if (target.parentId !== null) findTask(nextItems, target.parentId).collapsed = false;
   return { items: nextItems, changed: true };
 }

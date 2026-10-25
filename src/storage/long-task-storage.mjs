@@ -2,6 +2,12 @@ import { normalizeTaskTags } from '../domain/tags.mjs';
 import { normalizeTaskTree } from '../domain/tasks.mjs';
 
 const browserStorageKey = 'desktop-calendar:long-tasks';
+let writeQueue = Promise.resolve();
+let lastWriteError = null;
+export async function flushLongTasks() {
+  await writeQueue;
+  if (lastWriteError) throw lastWriteError;
+}
 
 export async function loadLongTasks(fallbackPalette = {}) {
   const data = await loadLongTasksData();
@@ -14,13 +20,16 @@ export async function saveLongTasks(tasks) {
     tasks: normalizeTaskTree(tasks).map(normalizeLongTask),
   };
 
-  if (!isTauriRuntime()) {
-    window.localStorage.setItem(browserStorageKey, JSON.stringify(data));
+  const result = writeQueue.then(async () => {
+    if (!isTauriRuntime()) window.localStorage.setItem(browserStorageKey, JSON.stringify(data));
+    else await window.__TAURI__.core.invoke('save_long_tasks', { tasks: data });
+    lastWriteError = null;
     return data.tasks;
-  }
-
-  await window.__TAURI__.core.invoke('save_long_tasks', { tasks: data });
-  return data.tasks;
+  });
+  writeQueue = result.catch((error) => {
+    lastWriteError = error;
+  });
+  return result;
 }
 
 async function loadLongTasksData() {

@@ -1,3 +1,4 @@
+import { notebookPresets, notebookFlowerColors, notebookRoles } from './notebook-theme.mjs';
 export const themePresets = [
   {
     id: 'morning',
@@ -9,7 +10,7 @@ export const themePresets = [
     text: '#edf3ef',
     border: '#a9c8c2',
     success: '#a1ccad',
-    danger: '#dda097',
+    danger: '#df9275',
     shadow: '#111f24',
   },
   {
@@ -22,7 +23,7 @@ export const themePresets = [
     text: '#eef2f6',
     border: '#b8cadd',
     success: '#a3c8b4',
-    danger: '#dea39e',
+    danger: '#df9579',
     shadow: '#17202d',
   },
   {
@@ -35,7 +36,7 @@ export const themePresets = [
     text: '#f5eee7',
     border: '#d9c5b5',
     success: '#b6c895',
-    danger: '#df9c89',
+    danger: '#df9173',
     shadow: '#221b1a',
   },
   {
@@ -48,7 +49,7 @@ export const themePresets = [
     text: '#eff3eb',
     border: '#bdd1bd',
     success: '#add19f',
-    danger: '#e2a894',
+    danger: '#e09b79',
     shadow: '#17231d',
   },
   {
@@ -61,18 +62,93 @@ export const themePresets = [
     text: '#f3edf2',
     border: '#d5c2d0',
     success: '#aec9b0',
-    danger: '#e2a2a2',
+    danger: '#df9576',
     shadow: '#241b24',
   },
 ];
 
 // Keep the original palettes intact for the minimal appearance.
 const botanicalPresets = [
-  { id: 'morning', name: '枝间雾', color: '#293a36', surface: '#354740', glow: '#adc2ad', warm: '#d4bd91', text: '#f1f2e7', border: '#b8c9b6', success: '#b4cba0', danger: '#dca497', shadow: '#17251f', petal: '#e6e4ca', center: '#c5a467', stem: '#9eb497' },
-  { id: 'mist', name: '雨后蓝', color: '#2e3942', surface: '#3a4851', glow: '#a8bdc5', warm: '#d6c4a6', text: '#edf1ed', border: '#bccbd0', success: '#b2c7a9', danger: '#d9a4a0', shadow: '#1d2830', petal: '#d8e6dc', center: '#c8b578', stem: '#a4bba9' },
-  { id: 'apricot', name: '杏色光', color: '#40372f', surface: '#51453a', glow: '#ccb9a0', warm: '#ddc294', text: '#f4eee3', border: '#d6c7b1', success: '#bec9a0', danger: '#dfa999', shadow: '#29231d', petal: '#f1dfb6', center: '#c8a174', stem: '#b5bd98' },
-  { id: 'sage', name: '苔庭绿', color: '#303b31', surface: '#3e4b3c', glow: '#b1c19f', warm: '#d8c398', text: '#f0f1e4', border: '#c1ccb4', success: '#b8cda1', danger: '#daa596', shadow: '#1d281e', petal: '#dfe6bf', center: '#c8b17c', stem: '#a4b98c' },
-  { id: 'rose', name: '暮花粉', color: '#40373d', surface: '#51454b', glow: '#c4aeb7', warm: '#d8c0a1', text: '#f4edf0', border: '#d4c3cb', success: '#b7c6aa', danger: '#dfa8a7', shadow: '#2b2227', petal: '#e8cbd1', center: '#d2b481', stem: '#acba9d' },
+  {
+    id: 'morning',
+    name: '枝间雾',
+    color: '#293a36',
+    surface: '#354740',
+    glow: '#adc2ad',
+    warm: '#d4bd91',
+    text: '#f1f2e7',
+    border: '#b8c9b6',
+    success: '#b4cba0',
+    danger: '#df9678',
+    shadow: '#17251f',
+    petal: '#e6e4ca',
+    center: '#c5a467',
+    stem: '#9eb497',
+  },
+  {
+    id: 'mist',
+    name: '雨后蓝',
+    color: '#2e3942',
+    surface: '#3a4851',
+    glow: '#a8bdc5',
+    warm: '#d6c4a6',
+    text: '#edf1ed',
+    border: '#bccbd0',
+    success: '#b2c7a9',
+    danger: '#df9579',
+    shadow: '#1d2830',
+    petal: '#d8e6dc',
+    center: '#c8b578',
+    stem: '#a4bba9',
+  },
+  {
+    id: 'apricot',
+    name: '杏色光',
+    color: '#40372f',
+    surface: '#51453a',
+    glow: '#ccb9a0',
+    warm: '#ddc294',
+    text: '#f4eee3',
+    border: '#d6c7b1',
+    success: '#bec9a0',
+    danger: '#e09a7a',
+    shadow: '#29231d',
+    petal: '#f1dfb6',
+    center: '#c8a174',
+    stem: '#b5bd98',
+  },
+  {
+    id: 'sage',
+    name: '苔庭绿',
+    color: '#303b31',
+    surface: '#3e4b3c',
+    glow: '#b1c19f',
+    warm: '#d8c398',
+    text: '#f0f1e4',
+    border: '#c1ccb4',
+    success: '#b8cda1',
+    danger: '#dc9275',
+    shadow: '#1d281e',
+    petal: '#dfe6bf',
+    center: '#c8b17c',
+    stem: '#a4b98c',
+  },
+  {
+    id: 'rose',
+    name: '暮花粉',
+    color: '#40373d',
+    surface: '#51454b',
+    glow: '#c4aeb7',
+    warm: '#d8c0a1',
+    text: '#f4edf0',
+    border: '#d4c3cb',
+    success: '#b7c6aa',
+    danger: '#df9678',
+    shadow: '#2b2227',
+    petal: '#e8cbd1',
+    center: '#d2b481',
+    stem: '#acba9d',
+  },
 ];
 
 const themeStorageKey = 'desktop-calendar-theme';
@@ -81,6 +157,8 @@ export const defaultTheme = {
   opacity: 0.84,
   appearance: 'botanical',
   completionMotion: true,
+  gardenEnabled: true,
+  surfaceStyle: 'notebook',
 };
 
 export function loadThemeSettings() {
@@ -99,15 +177,42 @@ export function saveThemeSettings(settings) {
 
 export function applyThemeSettings(settings) {
   const normalized = normalizeThemeSettings(settings);
-  const preset = getThemePreset(normalized.presetId, normalized.appearance);
+  const preset = getThemePreset(normalized.presetId, normalized.appearance, normalized.surfaceStyle);
   const root = document.documentElement;
   root.dataset.appearance = normalized.appearance;
   root.dataset.completionMotion = String(normalized.completionMotion);
-  root.style.setProperty('--flower-petal', preset.petal || preset.success);
-  root.style.setProperty('--flower-center', preset.center || preset.warm);
-  const flowerColors = { cream: '#e7dfba', rose: '#d9b1bb', blue: '#b2cbd5', lilac: '#c7badb', apricot: '#e3c2a1', sage: '#bacb9e' };
+  root.dataset.surfaceStyle = normalized.surfaceStyle;
+  root.style.colorScheme = normalized.surfaceStyle === 'notebook' ? 'light' : 'dark';
+  root.style.setProperty(
+    '--flower-petal',
+    normalized.surfaceStyle === 'notebook' ? notebookFlowerColors.cream : preset.petal || preset.success,
+  );
+  root.style.setProperty(
+    '--flower-center',
+    normalized.surfaceStyle === 'notebook' ? '#b78232' : preset.center || preset.warm,
+  );
+  if (normalized.surfaceStyle === 'notebook')
+    Object.entries(notebookRoles(preset)).forEach(([role, value]) =>
+      root.style.setProperty('--paper-' + role, value),
+    );
+  const flowerColors =
+    normalized.surfaceStyle === 'notebook'
+      ? notebookFlowerColors
+      : {
+          cream: '#e7dfba',
+          rose: '#d9b1bb',
+          blue: '#b2cbd5',
+          lilac: '#c7badb',
+          apricot: '#e3c2a1',
+          sage: '#bacb9e',
+        };
   Object.entries(flowerColors).forEach(([tone, color]) => {
-    root.style.setProperty(`--flower-${tone}`, `color-mix(in srgb, ${color} 76%, ${preset.petal || preset.success} 24%)`);
+    root.style.setProperty(
+      `--flower-${tone}`,
+      normalized.surfaceStyle === 'notebook'
+        ? color
+        : `color-mix(in srgb, ${color} 76%, ${preset.petal || preset.success} 24%)`,
+    );
   });
   root.style.setProperty('--branch-rgb', hexToRgbTriplet(preset.stem || preset.border));
   root.style.setProperty('--theme-base-rgb', hexToRgbTriplet(preset.color));
@@ -125,12 +230,13 @@ export function applyThemeSettings(settings) {
   return normalized;
 }
 
-export function getThemePresets(appearance = 'botanical') {
+export function getThemePresets(appearance = 'botanical', surfaceStyle = 'glass') {
+  if (surfaceStyle === 'notebook') return notebookPresets;
   return appearance === 'minimal' ? themePresets : botanicalPresets;
 }
 
-export function getThemePreset(id, appearance = 'botanical') {
-  const presets = getThemePresets(appearance);
+export function getThemePreset(id, appearance = 'botanical', surfaceStyle = 'glass') {
+  const presets = getThemePresets(appearance, surfaceStyle);
   return presets.find((preset) => preset.id === id) || presets[0];
 }
 
@@ -145,7 +251,19 @@ export function normalizeThemeSettings(settings) {
     presetId,
     opacity: Number(opacity.toFixed(2)),
     appearance: settings?.appearance === 'minimal' ? 'minimal' : defaultTheme.appearance,
-    completionMotion: typeof settings?.completionMotion === 'boolean' ? settings.completionMotion : defaultTheme.completionMotion,
+    // Migrate the old switch to the garden; task bloom always follows system motion preferences.
+    completionMotion: true,
+    gardenEnabled:
+      typeof settings?.gardenEnabled === 'boolean'
+        ? settings.gardenEnabled
+        : settings?.completionMotion !== false,
+    // Existing saved themes without this newer field keep their original glass style.
+    surfaceStyle:
+      settings == null
+        ? defaultTheme.surfaceStyle
+        : settings?.surfaceStyle === 'notebook'
+          ? 'notebook'
+          : 'glass',
   };
 }
 
