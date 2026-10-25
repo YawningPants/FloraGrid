@@ -41,7 +41,7 @@ https://developer.microsoft.com/microsoft-edge/webview2/
 
 源码：https://github.com/YawningPants/FloraGrid
 版本提交：$commit
-"@ | Set-Content -LiteralPath (Join-Path $portable '使用说明.txt') -Encoding UTF8
+"@ | Set-Content -LiteralPath (Join-Path $portable 'README.txt') -Encoding UTF8
   $archive = Join-Path $OutputDirectory "FloraGrid_${version}_windows-x64_portable.zip"
   Compress-Archive -LiteralPath $portable -DestinationPath $archive -CompressionLevel Optimal
   $hashes = @($installer, $archive) | ForEach-Object {
