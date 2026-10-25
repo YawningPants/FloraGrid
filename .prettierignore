@@ -1,6 +1,6 @@
 node_modules/
 src-tauri/target/
 src-tauri/gen/
-release/
+/release/
 docs/performance/*.json
 package-lock.json
