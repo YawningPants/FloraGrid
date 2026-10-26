@@ -17,6 +17,7 @@
     "test:release-features": "node tests/release-features-browser.mjs",
     "test:paper-polish": "node tests/paper-polish-browser.mjs",
     "test:growth-refinements": "node tests/growth-refinements-browser.mjs",
+    "test:daily-polish": "node tests/daily-polish-browser.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "screenshots": "node tools/screenshots/capture.mjs",

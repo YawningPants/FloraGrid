@@ -1,5 +1,6 @@
 /* A separate paper component system: opaque fills, ink edges, no glass glows. */
-html[data-surface-style='notebook'] {
+/* Include appearance in the scope so mode-specific glass rules cannot override paper states. */
+html[data-surface-style='notebook'][data-appearance] {
   --paper: var(--paper-page);
   --ink: var(--paper-ink);
   --text-subtle: var(--paper-muted);
@@ -8,7 +9,7 @@ html[data-surface-style='notebook'] {
   --flower-rest-opacity: 1;
   --flower-rest-saturation: 1;
 }
-html[data-surface-style='notebook'] :is(.day-window, .month-window, .settings-window) {
+html[data-surface-style='notebook'][data-appearance] :is(.day-window, .month-window, .settings-window) {
   color: var(--ink);
   border: 1px solid var(--paper-line-strong);
   border-radius: 10px;
@@ -17,24 +18,25 @@ html[data-surface-style='notebook'] :is(.day-window, .month-window, .settings-wi
     var(--paper-page);
   backdrop-filter: none;
 }
-html[data-surface-style='notebook'] .settings-window {
+html[data-surface-style='notebook'][data-appearance] .settings-window {
   background: var(--paper-page);
 }
-html[data-surface-style='notebook'] .window-titlebar {
+html[data-surface-style='notebook'][data-appearance] .window-titlebar {
   color: var(--paper-muted);
   background: var(--paper-panel);
   border-bottom: 1px solid var(--paper-line);
 }
-html[data-surface-style='notebook'] .window-titlebar.is-pinned {
+html[data-surface-style='notebook'][data-appearance] .window-titlebar.is-pinned {
   border-bottom-color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] :is(.day-header, .day-toolbar, .month-header, .settings-page) {
+html[data-surface-style='notebook'][data-appearance]
+  :is(.day-header, .day-toolbar, .month-header, .settings-page) {
   background: transparent;
   color: var(--ink);
 }
 
 /* Small ink controls with the same shape and activation treatment. */
-html[data-surface-style='notebook'] :is(.window-control, .window-control.pin) {
+html[data-surface-style='notebook'][data-appearance] :is(.window-control, .window-control.pin) {
   position: relative;
   width: 20px;
   height: 20px;
@@ -46,18 +48,18 @@ html[data-surface-style='notebook'] :is(.window-control, .window-control.pin) {
   color: var(--ink);
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .window-control:hover {
+html[data-surface-style='notebook'][data-appearance] .window-control:hover {
   background: var(--paper-hover);
   border-color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] .window-control.pin.is-active {
+html[data-surface-style='notebook'][data-appearance] .window-control.pin.is-active {
   width: 20px;
   background: var(--paper-accent);
   border-color: var(--paper-accent);
   color: var(--paper-on-accent);
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .window-control.minimize::before {
+html[data-surface-style='notebook'][data-appearance] .window-control.minimize::before {
   position: absolute;
   top: 10px;
   left: 5px;
@@ -66,19 +68,19 @@ html[data-surface-style='notebook'] .window-control.minimize::before {
   margin: 0;
   background: currentColor;
 }
-html[data-surface-style='notebook'] .window-control.close::before,
-html[data-surface-style='notebook'] .window-control.close::after {
+html[data-surface-style='notebook'][data-appearance] .window-control.close::before,
+html[data-surface-style='notebook'][data-appearance] .window-control.close::after {
   top: 9px;
   left: 5px;
   width: 8px;
   background: currentColor;
 }
-html[data-surface-style='notebook'] .window-control.close:hover {
+html[data-surface-style='notebook'][data-appearance] .window-control.close:hover {
   background: var(--paper-danger);
   border-color: var(--paper-danger);
   color: var(--paper-on-accent);
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   :is(
     .header-tool,
     .date-nav-button,
@@ -95,7 +97,7 @@ html[data-surface-style='notebook']
   border-radius: 4px;
   box-shadow: none;
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   :is(
     .header-tool,
     .date-nav-button,
@@ -110,72 +112,76 @@ html[data-surface-style='notebook']
   color: var(--ink);
   border-color: var(--paper-line);
 }
-html[data-surface-style='notebook'] :is(.header-tool, .quiet-button).is-active {
+html[data-surface-style='notebook'][data-appearance] :is(.header-tool, .quiet-button).is-active {
   background: var(--paper-selected);
   border-color: var(--paper-accent);
   color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] :is(button, input, select, textarea):focus-visible {
+html[data-surface-style='notebook'][data-appearance] :is(button, input, select, textarea):focus-visible {
   outline: 1.5px solid var(--paper-accent);
   outline-offset: 2px;
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .header-tool-label {
+html[data-surface-style='notebook'][data-appearance] .header-tool-label {
   background: var(--paper-card);
   color: var(--ink);
   border-color: var(--paper-line-strong);
   border-radius: 3px;
   box-shadow: 0 2px 0 var(--paper-line);
 }
-html[data-surface-style='notebook'] .header-tool-label::before {
+html[data-surface-style='notebook'][data-appearance] .header-tool-label::before {
   border-color: var(--paper-line-strong);
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   :is(.add-root, .dialog-button, .workspace-primary, .tag-manager-new-button) {
-  background: var(--paper-control);
+  background: var(--paper-card);
   color: var(--ink);
   border: 1px solid var(--paper-line-strong);
   border-radius: 4px;
-  box-shadow: none;
+  box-shadow: 0 1px 0 var(--paper-line);
 }
-html[data-surface-style='notebook'] :is(.add-root, .dialog-button.primary, .workspace-primary) {
+html[data-surface-style='notebook'][data-appearance] :is(.dialog-button.primary, .workspace-primary) {
   background: var(--paper-selected);
   border-color: var(--paper-accent);
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance] .add-root {
+  border-bottom-width: 2px;
+  color: var(--paper-accent);
+}
+html[data-surface-style='notebook'][data-appearance]
   :is(.add-root, .dialog-button, .workspace-primary, .tag-manager-new-button):not(:disabled):hover {
   background: var(--paper-pressed);
   border-color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] .dialog-button.danger {
+html[data-surface-style='notebook'][data-appearance] .dialog-button.danger {
   background: var(--paper-danger-wash);
   color: var(--paper-danger);
   border-color: var(--paper-danger);
 }
-html[data-surface-style='notebook'] .dialog-button.danger:hover {
+html[data-surface-style='notebook'][data-appearance] .dialog-button.danger:hover {
   background: var(--paper-danger);
   color: var(--paper-on-accent);
 }
-html[data-surface-style='notebook'] .switch {
+html[data-surface-style='notebook'][data-appearance] .switch {
   background: var(--paper-control);
   border: 1px solid var(--paper-line-strong);
 }
-html[data-surface-style='notebook'] .switch.is-on {
+html[data-surface-style='notebook'][data-appearance] .switch.is-on {
   background: var(--paper-accent);
   border-color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] .switch::after {
+html[data-surface-style='notebook'][data-appearance] .switch::after {
   width: 9px;
   height: 9px;
   background: var(--paper-muted);
 }
-html[data-surface-style='notebook'] .switch.is-on::after {
+html[data-surface-style='notebook'][data-appearance] .switch.is-on::after {
   background: var(--paper-on-accent);
 }
-html[data-surface-style='notebook'] :is(input, textarea)::placeholder {
+html[data-surface-style='notebook'][data-appearance] :is(input, textarea)::placeholder {
   color: var(--paper-muted);
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   :is(
     .task-search-input,
     .task-title-input,
@@ -197,92 +203,117 @@ html[data-surface-style='notebook']
 }
 
 /* Task families are sheets; task colors are pencil inks, not translucent panels. */
-html[data-surface-style='notebook'] .status-summary span {
+html[data-surface-style='notebook'][data-appearance] .status-summary span {
   background: var(--paper-control);
   color: var(--paper-muted);
   border-radius: 3px;
 }
-html[data-surface-style='notebook'] .status-summary span:nth-child(2) {
+html[data-surface-style='notebook'][data-appearance] .status-summary span:nth-child(2) {
   background: var(--paper-success-wash);
   color: var(--paper-success);
 }
-html[data-surface-style='notebook'] .status-summary span:nth-child(3) {
+html[data-surface-style='notebook'][data-appearance] .status-summary span:nth-child(3) {
   background: var(--paper-danger-wash);
   color: var(--paper-danger);
 }
-html[data-surface-style='notebook'] .task-tree > .task-node {
+html[data-surface-style='notebook'][data-appearance] .task-tree > .task-node {
   --family-stripe: var(--group-ink);
   background: var(--paper-card);
   border-color: var(--paper-line);
   border-radius: 5px 11px 5px 11px;
   box-shadow: 0 1px 0 var(--paper-line);
 }
-html[data-surface-style='notebook'] .task-tree > .task-node:has(> .task-row.has-custom-color) {
+html[data-surface-style='notebook'][data-appearance]
+  .task-tree
+  > .task-node:has(> .task-row.has-custom-color) {
   box-shadow:
     inset 3px 0 var(--family-stripe),
     0 1px 0 var(--paper-line);
 }
-html[data-surface-style='notebook'] .task-tree > .task-node > .task-row {
+html[data-surface-style='notebook'][data-appearance] .task-tree > .task-node > .task-row {
   background: transparent;
 }
-html[data-surface-style='notebook'] .task-row.has-custom-color:not(.is-deleted) > .task-body > .task-title {
+html[data-surface-style='notebook'][data-appearance]
+  .task-row.has-custom-color:not(.is-deleted)
+  > .task-body
+  > .task-title {
   color: var(--accent-ink);
 }
-html[data-surface-style='notebook'] .task-row {
+html[data-surface-style='notebook'][data-appearance] .task-row {
   --completion-active-title: var(--ink);
   --completion-quiet-title: color-mix(in srgb, var(--ink) 75%, var(--paper-page));
   --completion-strike: var(--paper-success);
 }
-html[data-surface-style='notebook'] .task-row.has-custom-color {
+html[data-surface-style='notebook'][data-appearance] .task-row.has-custom-color {
   --completion-active-title: var(--accent-ink);
   --completion-quiet-title: color-mix(in srgb, var(--accent-ink) 82%, var(--paper-page));
 }
-html[data-surface-style='notebook'] .task-row.is-completed > .task-body > .task-title,
-html[data-surface-style='notebook'] .task-row.has-custom-color.is-completed > .task-body > .task-title {
+html[data-surface-style='notebook'][data-appearance] .task-row.is-completed > .task-body > .task-title,
+html[data-surface-style='notebook'][data-appearance]
+  .task-row.has-custom-color.is-completed
+  > .task-body
+  > .task-title {
   color: var(--completion-quiet-title);
 }
-html[data-surface-style='notebook'] .task-row.is-failed > .task-body > .task-title,
-html[data-surface-style='notebook'] .task-row.has-custom-color.is-failed > .task-body > .task-title {
+html[data-surface-style='notebook'][data-appearance] .task-row.is-failed > .task-body > .task-title,
+html[data-surface-style='notebook'][data-appearance]
+  .task-row.has-custom-color.is-failed
+  > .task-body
+  > .task-title {
   color: var(--paper-danger);
 }
-html[data-surface-style='notebook'] .task-row.is-deleted .task-title {
+html[data-surface-style='notebook'][data-appearance] .task-row.is-deleted .task-title {
   color: var(--paper-muted);
 }
-html[data-surface-style='notebook'] .task-tree > .task-node:has(> .task-row.is-completed) {
+html[data-surface-style='notebook'][data-appearance] .task-tree > .task-node:has(> .task-row.is-completed) {
   background: var(--paper-panel);
   border-color: var(--paper-line);
 }
-html[data-surface-style='notebook'] .task-tree > .task-node:has(> .task-row.is-failed) {
+html[data-surface-style='notebook'][data-appearance] .task-tree > .task-node:has(> .task-row.is-failed) {
   background: var(--paper-danger-wash);
   border-color: var(--paper-danger);
 }
-html[data-surface-style='notebook'] .children .task-row.is-failed {
+html[data-surface-style='notebook'][data-appearance] .children .task-row.is-failed {
   background: transparent;
 }
-html[data-surface-style='notebook'] .children .task-row:hover,
-html[data-surface-style='notebook'] .children .task-row:has(:focus-visible),
-html[data-surface-style='notebook'] .children .task-row.is-editing {
+html[data-surface-style='notebook'][data-appearance] .children .task-row:hover,
+html[data-surface-style='notebook'][data-appearance] .children .task-row:has(:focus-visible),
+html[data-surface-style='notebook'][data-appearance] .children .task-row.is-editing {
   background: transparent;
 }
-html[data-surface-style='notebook'] .children .task-row:hover > .task-body,
-html[data-surface-style='notebook'] .children .task-row:has(:focus-visible) > .task-body,
-html[data-surface-style='notebook'] .children .task-row.is-editing > .task-body {
+html[data-surface-style='notebook'][data-appearance] .children .task-row:hover > .task-body,
+html[data-surface-style='notebook'][data-appearance] .children .task-row:has(:focus-visible) > .task-body,
+html[data-surface-style='notebook'][data-appearance] .children .task-row.is-editing > .task-body {
   background: var(--paper-hover);
   box-shadow: 0 0 0 3px var(--paper-hover);
   border-radius: 3px;
 }
-html[data-surface-style='notebook'] .status-button.active {
+html[data-surface-style='notebook'][data-appearance] .status-button.active {
   position: relative;
   border-color: var(--paper-accent);
   background: var(--paper-leaf);
+  box-shadow: none;
 }
-html[data-surface-style='notebook'] .status-button.active[data-task-role='root'] {
+html[data-surface-style='notebook'][data-appearance] .status-button:hover {
+  box-shadow: none;
+}
+html[data-surface-style='notebook'][data-appearance='minimal'] .status-button.completed {
+  background: var(--paper-success-wash);
+  border-color: var(--paper-success);
+}
+html[data-surface-style='notebook'][data-appearance='minimal'] .status-button.active:hover {
+  background: var(--paper-selected);
+}
+html[data-surface-style='notebook'][data-appearance] .status-button.active[data-task-role='root'] {
   border-color: var(--paper-accent);
   background: var(--paper-card);
 }
-html[data-surface-style='notebook'] .task-row.has-custom-color > .status-button.active {
+html[data-surface-style='notebook'][data-appearance] .task-row.has-custom-color > .status-button.active {
   border-color: var(--accent-ink);
   background: color-mix(in srgb, var(--accent-ink) 10%, var(--paper-card));
+}
+html[data-surface-style='notebook'][data-appearance] .task-row > .status-button.active:hover {
+  background: var(--paper-selected);
 }
 html[data-surface-style='notebook'][data-appearance='botanical'] .children .status-button.active::after {
   content: '';
@@ -295,30 +326,30 @@ html[data-surface-style='notebook'][data-appearance='botanical'] .children .stat
   opacity: 0.65;
   pointer-events: none;
 }
-html[data-surface-style='notebook'] .status-button.completed {
+html[data-surface-style='notebook'][data-appearance] .status-button.completed {
   color: var(--paper-success);
 }
-html[data-surface-style='notebook'] .status-button.failed {
+html[data-surface-style='notebook'][data-appearance] .status-button.failed {
   color: var(--paper-danger);
   background: var(--paper-danger-wash);
   border-color: var(--paper-danger);
 }
-html[data-surface-style='notebook'] .status-button.completed .completion-flower {
+html[data-surface-style='notebook'][data-appearance] .status-button.completed .completion-flower {
   opacity: 1;
   filter: none;
 }
-html[data-surface-style='notebook'] .flower-petal {
+html[data-surface-style='notebook'][data-appearance] .flower-petal {
   stroke: color-mix(in srgb, var(--flower-tone) 85%, var(--ink));
   stroke-width: 0.3;
   stroke-linejoin: round;
 }
-html[data-surface-style='notebook'] .task-plant-branches .plant-trunk {
+html[data-surface-style='notebook'][data-appearance] .task-plant-branches .plant-trunk {
   opacity: 0.6;
 }
-html[data-surface-style='notebook'] .task-plant-branches .plant-fork {
+html[data-surface-style='notebook'][data-appearance] .task-plant-branches .plant-fork {
   opacity: 0.72;
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   .task-tree
   > .task-node:has(> .task-row.is-reminder:not(.is-completed):not(.is-failed):not(.is-deleted)) {
   border-color: var(--paper-line-strong);
@@ -327,36 +358,36 @@ html[data-surface-style='notebook']
     inset 3px 0 var(--family-stripe, var(--paper-accent)),
     0 1px 0 var(--paper-line);
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   .task-row.is-reminder:not(.is-completed):not(.is-failed):not(.is-deleted) {
   background: transparent;
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   .children
   .task-row.is-reminder:not(.is-completed):not(.is-failed):not(.is-deleted) {
   background: transparent;
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   .children
   .task-row.is-reminder:not(.is-completed):not(.is-failed):not(.is-deleted)
   > .task-body {
   background: var(--paper-reminder);
 }
-html[data-surface-style='notebook'] .reminder-task-badge {
+html[data-surface-style='notebook'][data-appearance] .reminder-task-badge {
   color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] .task-color-button::before {
+html[data-surface-style='notebook'][data-appearance] .task-color-button::before {
   border-radius: 3px;
   box-shadow: none;
   border: 1px solid var(--paper-line-strong);
 }
-html[data-surface-style='notebook'] .task-color-button.has-custom-color::before {
+html[data-surface-style='notebook'][data-appearance] .task-color-button.has-custom-color::before {
   background: var(--accent-ink);
   border-color: var(--accent-ink);
 }
 
 /* Pencil labels have a short colored edge and a light, fully opaque paper fill. */
-html[data-surface-style='notebook'] :is(.tag-chip, .tag-manager-chip, .tag-template-button) {
+html[data-surface-style='notebook'][data-appearance] :is(.tag-chip, .tag-manager-chip, .tag-template-button) {
   color: var(--tag-ink, var(--ink));
   background: color-mix(in srgb, var(--tag-ink, var(--ink)) 7%, var(--paper-card));
   border: 1px solid color-mix(in srgb, var(--tag-ink, var(--ink)) 32%, var(--paper-card));
@@ -364,55 +395,57 @@ html[data-surface-style='notebook'] :is(.tag-chip, .tag-manager-chip, .tag-templ
   border-radius: 2px 5px 2px 5px;
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .tag-manager-chip-edit {
+html[data-surface-style='notebook'][data-appearance] .tag-manager-chip-edit {
   color: var(--tag-ink, var(--ink));
 }
-html[data-surface-style='notebook'] .tag-chip:hover {
+html[data-surface-style='notebook'][data-appearance] .tag-chip:hover {
   border-color: var(--tag-ink, var(--paper-accent));
 }
-html[data-surface-style='notebook'] .tag-manage-link {
+html[data-surface-style='notebook'][data-appearance] .tag-manage-link {
   color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] :is(.task-color-choice-swatch, .tag-color-swatch, .tag-swatches span) {
+html[data-surface-style='notebook'][data-appearance]
+  :is(.task-color-choice-swatch, .tag-color-swatch, .tag-swatches span) {
   background: var(--swatch-ink, var(--swatch));
   border: 1px solid var(--paper-line-strong);
   border-radius: 4px;
   box-shadow: none;
 }
-html[data-surface-style='notebook'] :is(.task-color-choice:hover, .task-color-choice.is-selected) {
+html[data-surface-style='notebook'][data-appearance]
+  :is(.task-color-choice:hover, .task-color-choice.is-selected) {
   background: var(--paper-selected);
   border-color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] .task-color-choice-swatch {
+html[data-surface-style='notebook'][data-appearance] .task-color-choice-swatch {
   color: var(--paper-on-accent);
 }
 
 /* A calendar stamp marks today, with strong text contrast in both task appearances. */
-html[data-surface-style='notebook'] .month-calendar {
+html[data-surface-style='notebook'][data-appearance] :is(.month-calendar-panel, .month-calendar) {
   background: var(--paper-card);
   border: 1px solid var(--paper-line);
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .month-day-cell {
+html[data-surface-style='notebook'][data-appearance] .month-day-cell {
   background: transparent;
   border: 1px solid transparent;
   border-radius: 4px;
   box-shadow: none;
   transform: none;
 }
-html[data-surface-style='notebook'] .month-day-cell:not(:disabled):hover {
+html[data-surface-style='notebook'][data-appearance] .month-day-cell:not(:disabled):hover {
   background: var(--paper-hover);
   border-color: var(--paper-line);
   box-shadow: none;
   transform: none;
 }
-html[data-surface-style='notebook'] .month-day-cell.is-today,
-html[data-surface-style='notebook'] .month-day-cell.is-today:hover {
+html[data-surface-style='notebook'][data-appearance] .month-day-cell.is-today,
+html[data-surface-style='notebook'][data-appearance] .month-day-cell.is-today:hover {
   background: var(--paper-selected);
   border-color: var(--paper-accent);
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .month-day-cell.is-today .month-day-number {
+html[data-surface-style='notebook'][data-appearance] .month-day-cell.is-today .month-day-number {
   min-width: 23px;
   height: 20px;
   border: 1px solid var(--paper-accent);
@@ -421,24 +454,29 @@ html[data-surface-style='notebook'] .month-day-cell.is-today .month-day-number {
   color: var(--paper-on-accent);
   line-height: 18px;
 }
-html[data-surface-style='notebook'] .month-task-chip {
+html[data-surface-style='notebook'][data-appearance] .month-day-cell.is-long-target:not(.is-today) {
+  background: var(--paper-hover);
+  border-color: var(--paper-accent);
+  box-shadow: none;
+}
+html[data-surface-style='notebook'][data-appearance] .month-task-chip {
   background: var(--paper-panel);
   border-color: var(--paper-line);
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .month-task-chip.has-custom-color {
+html[data-surface-style='notebook'][data-appearance] .month-task-chip.has-custom-color {
   color: var(--accent-ink);
   border-left-color: var(--accent-ink);
 }
-html[data-surface-style='notebook'] .month-task-chip.is-completed {
+html[data-surface-style='notebook'][data-appearance] .month-task-chip.is-completed {
   color: color-mix(in srgb, var(--accent-ink, var(--ink)) 82%, var(--paper-page));
   background: var(--paper-success-wash);
 }
-html[data-surface-style='notebook'] .month-task-chip.is-failed {
+html[data-surface-style='notebook'][data-appearance] .month-task-chip.is-failed {
   color: var(--paper-danger);
   background: var(--paper-danger-wash);
 }
-html[data-surface-style='notebook'] .month-task-chip.is-reminder {
+html[data-surface-style='notebook'][data-appearance] .month-task-chip.is-reminder {
   background: var(--paper-reminder);
   border-left-color: var(--paper-accent);
 }
@@ -451,71 +489,85 @@ html[data-surface-style='notebook'][data-appearance='botanical'] .month-task-chi
   background: transparent;
   padding-left: 1px;
 }
-html[data-surface-style='notebook'] .month-task-chip.is-reminder > svg {
+html[data-surface-style='notebook'][data-appearance] .month-task-chip.is-reminder > svg {
   color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] .month-task-leaf {
+html[data-surface-style='notebook'][data-appearance] .month-task-leaf {
   opacity: 0.8;
 }
 
 /* Settings is a clean sheet; binding marks never run through its navigation. */
-html[data-surface-style='notebook'] .settings-page .settings-panel {
+html[data-surface-style='notebook'][data-appearance] .settings-page .settings-panel {
   padding: 12px;
   background: var(--paper-card);
   border: 1px solid var(--paper-line);
   border-radius: 5px;
 }
-html[data-surface-style='notebook'] .settings-tab {
+html[data-surface-style='notebook'][data-appearance] .settings-tab {
   background: transparent;
   border: 1px solid transparent;
   border-radius: 3px;
   color: var(--paper-muted);
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .settings-tab:hover {
+html[data-surface-style='notebook'][data-appearance] .settings-tab:hover {
   background: var(--paper-hover);
 }
-html[data-surface-style='notebook'] .settings-tab.is-active {
+html[data-surface-style='notebook'][data-appearance] .settings-tab.is-active {
   background: var(--paper-selected);
   border-color: var(--paper-line);
   box-shadow: inset 2px 0 var(--paper-accent);
   color: var(--paper-accent);
   font-weight: 600;
 }
-html[data-surface-style='notebook'] .appearance-option {
+html[data-surface-style='notebook'][data-appearance] .appearance-option {
   position: relative;
   background: var(--paper-panel);
   border: 1px solid var(--paper-line);
   border-radius: 4px;
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .appearance-option[aria-pressed='true'] {
+html[data-surface-style='notebook'][data-appearance] .appearance-option[aria-pressed='true'] {
   background: var(--paper-selected);
   border-color: var(--paper-accent);
   box-shadow: inset 0 -2px var(--paper-accent);
 }
-html[data-surface-style='notebook'] .appearance-option:hover {
+html[data-surface-style='notebook'][data-appearance] .appearance-option:hover {
   border-color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] .appearance-option:focus-visible {
+html[data-surface-style='notebook'][data-appearance] .appearance-option:focus-visible {
   outline: 1.5px solid var(--paper-accent);
   outline-offset: 2px;
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   :is(.appearance-option span, .completion-motion-control small, .storage-description, .day-date-text) {
   color: var(--paper-muted);
 }
-html[data-surface-style='notebook'] .theme-preset {
+html[data-surface-style='notebook'][data-appearance] .theme-preset {
   background: var(--paper-panel);
   border: 1px solid var(--paper-line);
   border-radius: 4px;
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .theme-preset.is-active {
+html[data-surface-style='notebook'][data-appearance] .theme-preset.is-active {
   background: var(--paper-selected);
   border-color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] .theme-preset-swatch {
+html[data-surface-style='notebook'][data-appearance] .theme-preset:hover {
+  background: var(--paper-hover);
+  border-color: var(--paper-accent);
+}
+html[data-surface-style='notebook'][data-appearance]
+  :is(input[type='checkbox'], input[type='range'], progress) {
+  accent-color: var(--paper-accent);
+}
+html[data-surface-style='notebook'][data-appearance] .completion-motion-control {
+  padding: 10px;
+  border: 1px solid var(--paper-line);
+  border-radius: 4px;
+  background: var(--paper-panel);
+}
+html[data-surface-style='notebook'][data-appearance] .theme-preset-swatch {
   width: 18px;
   height: 23px;
   flex: 0 0 18px;
@@ -525,7 +577,7 @@ html[data-surface-style='notebook'] .theme-preset-swatch {
   background: var(--preset-base);
   box-shadow: none;
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   :is(
     .storage-path-card,
     .storage-path-value,
@@ -540,34 +592,38 @@ html[data-surface-style='notebook']
   box-shadow: none;
   border-radius: 5px;
 }
-html[data-surface-style='notebook'] .storage-path-value {
+html[data-surface-style='notebook'][data-appearance] .storage-path-value {
   background: var(--paper-control);
 }
-html[data-surface-style='notebook'] .storage-warning {
+html[data-surface-style='notebook'][data-appearance] .storage-warning {
   background: var(--paper-reminder);
   border-color: var(--paper-line-strong);
   color: var(--ink);
 }
-html[data-surface-style='notebook'] .tag-manager-editor,
-html[data-surface-style='notebook'] .tag-manager-editor.is-tag {
+html[data-surface-style='notebook'][data-appearance] .tag-manager-editor,
+html[data-surface-style='notebook'][data-appearance] .tag-manager-editor.is-tag {
   background: var(--paper-card);
   border-color: var(--tag-ink, var(--paper-accent));
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .tag-manager-color-dot::before {
+html[data-surface-style='notebook'][data-appearance] .tag-manager-color-dot::before {
   border-radius: 3px;
   background: var(--tag-ink, var(--paper-accent));
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .tag-manager-page button:not(:disabled):hover {
+html[data-surface-style='notebook'][data-appearance] .tag-manager-page button:not(:disabled):hover {
   background-color: var(--paper-hover);
 }
-html[data-surface-style='notebook'] .daily-notes {
+html[data-surface-style='notebook'][data-appearance] .daily-notes {
   background: var(--paper-panel);
   border-top: 1px solid var(--paper-line-strong);
 }
-html[data-surface-style='notebook'] .note-editor,
-html[data-surface-style='notebook'] .note-editor:focus {
+html[data-surface-style='notebook'][data-appearance] .note-toggle:hover {
+  background: var(--paper-hover);
+  color: var(--ink);
+}
+html[data-surface-style='notebook'][data-appearance] .note-editor,
+html[data-surface-style='notebook'][data-appearance] .note-editor:focus {
   padding: 7px 10px 9px;
   background-color: transparent;
   background-image: repeating-linear-gradient(
@@ -584,7 +640,7 @@ html[data-surface-style='notebook'] .note-editor:focus {
   border-radius: 0;
   color: var(--ink);
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   :is(
     .month-tools-drawer,
     .confirm-dialog,
@@ -602,20 +658,20 @@ html[data-surface-style='notebook']
   box-shadow: 0 3px 0 var(--paper-line);
   color: var(--ink);
 }
-html[data-surface-style='notebook'] .dialog-overlay {
+html[data-surface-style='notebook'][data-appearance] .dialog-overlay {
   background: rgba(35, 37, 28, 0.24);
   backdrop-filter: none;
 }
-html[data-surface-style='notebook']
-  :is(.task-context-item:hover, .tag-group-menu button:not(:disabled):hover) {
+html[data-surface-style='notebook'][data-appearance]
+  :is(.task-context-menu-item:hover, .tag-group-menu button:not(:disabled):hover) {
   background: var(--paper-hover);
 }
-html[data-surface-style='notebook'] .search-hit {
+html[data-surface-style='notebook'][data-appearance] .search-hit {
   background: var(--paper-reminder);
   color: var(--ink);
 }
 @media (max-width: 480px) {
-  html[data-surface-style='notebook'] .settings-page .settings-panel {
+  html[data-surface-style='notebook'][data-appearance] .settings-page .settings-panel {
     padding: 8px;
   }
 }
@@ -651,29 +707,30 @@ html[data-surface-style='notebook'][data-appearance='botanical']
 }
 
 /* Smaller popup tools and group navigation use the same flat paper controls. */
-html[data-surface-style='notebook'] :is(.icon-button:not(.header-tool), .tag-page-button, .tag-group-tab) {
+html[data-surface-style='notebook'][data-appearance]
+  :is(.icon-button:not(.header-tool), .tag-page-button, .tag-group-tab) {
   background: var(--paper-control);
   border: 1px solid var(--paper-line);
   border-radius: 4px;
   color: var(--paper-muted);
   box-shadow: none;
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   :is(.icon-button:not(.header-tool), .tag-page-button, .tag-group-tab):not(:disabled):hover {
   background: var(--paper-hover);
   border-color: var(--paper-accent);
   color: var(--ink);
 }
-html[data-surface-style='notebook'] :is(.tag-group-tab.is-active, .icon-button.primary) {
+html[data-surface-style='notebook'][data-appearance] :is(.tag-group-tab.is-active, .icon-button.primary) {
   background: var(--paper-selected);
   border-color: var(--paper-accent);
   color: var(--paper-accent);
 }
-html[data-surface-style='notebook'] .tag-group-pager::after {
+html[data-surface-style='notebook'][data-appearance] .tag-group-pager::after {
   background: var(--paper-line);
   box-shadow: none;
 }
-html[data-surface-style='notebook']
+html[data-surface-style='notebook'][data-appearance]
   :is(
     .task-search-input,
     .task-title-input,
@@ -686,15 +743,54 @@ html[data-surface-style='notebook']
   border-color: var(--paper-accent);
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .is-search-located {
+html[data-surface-style='notebook'][data-appearance] .is-search-located {
   outline-color: var(--paper-accent);
   box-shadow: none;
 }
-html[data-surface-style='notebook'] .tag-template-button:hover {
+html[data-surface-style='notebook'][data-appearance] .tag-template-button:hover {
   border-color: var(--tag-ink, var(--paper-accent));
 }
 
-html[data-surface-style='notebook'] .task-drag-projection {
+html[data-surface-style='notebook'][data-appearance] .task-drag-projection {
   outline: 2px solid var(--paper-accent);
   outline-offset: -2px;
+}
+
+/* Auxiliary controls are ink on paper too, including hover and keyboard focus. */
+html[data-surface-style='notebook'][data-appearance] :is(.deleted-actions, .long-task-editor-actions) {
+  background: transparent;
+}
+html[data-surface-style='notebook'][data-appearance]
+  :is(.collapse-toggle, .long-task-drag-handle, .tag-manager-add-tag) {
+  color: var(--paper-muted);
+  background: transparent;
+  box-shadow: none;
+  border-radius: 3px;
+}
+html[data-surface-style='notebook'][data-appearance]
+  :is(.collapse-toggle, .long-task-drag-handle, .tag-manager-add-tag):hover {
+  background: var(--paper-hover);
+  color: var(--ink);
+}
+html[data-surface-style='notebook'][data-appearance] .month-tools-drawer .long-task-title-input {
+  background: var(--paper-card);
+  border-color: var(--paper-line-strong);
+  box-shadow: none;
+  color: var(--ink);
+}
+html[data-surface-style='notebook'][data-appearance]
+  .month-tools-drawer
+  .long-task-actions
+  .add-long-tag:hover {
+  background: var(--paper-hover);
+}
+html[data-surface-style='notebook'][data-appearance] .task-context-menu-item.danger:hover {
+  background: var(--paper-danger-wash);
+  color: var(--paper-danger);
+}
+html[data-surface-style='notebook'][data-appearance] .search-empty {
+  background: var(--paper-panel);
+  border: 1px dashed var(--paper-line);
+  border-radius: 4px;
+  color: var(--paper-muted);
 }

@@ -5,7 +5,7 @@ export const taskStatusMeta = {
   deleted: { label: '已删除', symbol: '×', order: 3 },
 };
 
-export function createBlankTask() {
+export function createBlankTask(parent = null) {
   return {
     id: `task-${crypto.randomUUID()}`,
     title: '',
@@ -13,6 +13,8 @@ export function createBlankTask() {
     tags: [],
     collapsed: false,
     children: [],
+    // A creation-time snapshot: later recoloring or moving either task stays independent.
+    ...(parent?.color ? { color: parent.color } : {}),
   };
 }
 

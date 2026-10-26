@@ -68,6 +68,7 @@ let isSearchOpen = false;
 let searchQuery = '';
 let dailyNoteText = currentDay.note;
 let dailyNoteHeight = 112;
+let isDailyNoteExpanded = false;
 let isGlobalEscapeShortcutBound = false;
 let isBeforeUnloadFlushBound = false;
 let isExitRequestHandlerBound = false;
@@ -330,6 +331,7 @@ function resetDayViewState(dateKey = getTodayDateKey()) {
   searchQuery = '';
   dailyNoteText = currentDay.note;
   isDayLoading = true;
+  isDailyNoteExpanded = false;
   loadErrorMessage = '';
   activeTagPopoverTaskId = null;
   activeTagPopoverAnchor = null;
@@ -1055,7 +1057,7 @@ function setTaskColor(taskId, color) {
   updateTaskColorInPlace(task);
 }
 
-function openTaskColorPalette(task, trigger, { keyboard = false } = {}) {
+function openTaskColorPalette(task, trigger, { keyboard = false, anchor = trigger } = {}) {
   const palette = el('section', 'task-color-palette');
   palette.setAttribute('role', 'dialog');
   palette.setAttribute('aria-label', '选择任务颜色');
@@ -1101,7 +1103,7 @@ function openTaskColorPalette(task, trigger, { keyboard = false } = {}) {
     if (taskColorPalette) taskColorPalette.keyboard = true;
   });
   trigger.setAttribute('aria-expanded', 'true');
-  positionTaskColorPalette(palette, trigger);
+  positionTaskColorPalette(palette, anchor);
   (palette.querySelector('.task-color-choice.is-selected') || noColor).focus({ preventScroll: true });
 }
 
@@ -1131,7 +1133,10 @@ function closeTaskColorPalette(restoreFocus = false) {
   element.remove();
   trigger.setAttribute('aria-expanded', 'false');
   if (restoreFocus && trigger.isConnected) {
-    trigger.focus({ preventScroll: true });
+    const returnTarget = trigger.getClientRects().length
+      ? trigger
+      : getTaskRow(taskId)?.querySelector('.status-button');
+    returnTarget?.focus({ preventScroll: true });
   } else if (element.contains(focused) || getTaskRow(taskId)?.contains(focused)) {
     if (!focused?.matches('input,textarea,[contenteditable="true"]')) focused?.blur?.();
   }
@@ -1234,6 +1239,25 @@ function openTaskContextMenu(event, task) {
   const menu = el('div', 'task-context-menu');
   menu.setAttribute('role', 'menu');
   menu.append(createTaskContextMenuItem('复制', '', () => copyTaskFromDay(task)));
+  if (canColorTask(task)) {
+    menu.append(
+      createTaskContextMenuItem(
+        '任务颜色',
+        'task-context-color',
+        () => {
+          closeTaskColorPalette();
+          closeTagPopover();
+          renderTagPopoverOnly(document.querySelector('.day-window'));
+          const row = getTaskRow(task.id);
+          if (row)
+            openTaskColorPalette(task, row.querySelector('.task-color-button'), {
+              anchor: row.querySelector('.status-button'),
+            });
+        },
+        icon('palette'),
+      ),
+    );
+  }
   menu.append(
     createTaskContextMenuItem(
       task.pinned ? '取消任务置顶' : '置顶任务',
@@ -1379,11 +1403,22 @@ function createNotes() {
   notes.style.setProperty('--note-height', `${dailyNoteHeight}px`);
   notes.innerHTML = `
     <div class="note-resize-handle" title="拖动调整高度" aria-hidden="true"></div>
-    <h2>${sproutMarkup('note-sprout')}今日所思所想</h2>
-    <textarea class="note-editor" aria-label="今日所思所想" placeholder="记录今天的想法..."></textarea>
+    <h2><button class="note-toggle" type="button" aria-controls="daily-note-content">
+      ${sproutMarkup('note-sprout')}<span>今日所思所想</span>
+      <span class="note-toggle-chevron" aria-hidden="true">${icon('chevron')}</span>
+    </button></h2>
+    <div class="note-content" id="daily-note-content">
+      <div class="note-content-inner">
+        <textarea class="note-editor" aria-label="今日所思所想" placeholder="记录今天的想法..."></textarea>
+      </div>
+    </div>
   `;
   const editor = notes.querySelector('.note-editor');
   editor.value = dailyNoteText;
+  setNotesExpanded(notes, isDailyNoteExpanded);
+  notes.querySelector('.note-toggle').addEventListener('click', () => {
+    setNotesExpanded(notes, !isDailyNoteExpanded);
+  });
   editor.addEventListener('input', () => {
     dailyNoteText = editor.value;
     persistCurrentDaySoon();
@@ -1399,6 +1434,16 @@ function createNotes() {
     startNoteResize(event, notes);
   });
   return notes;
+}
+
+function setNotesExpanded(notes, expanded) {
+  if (!notes) return;
+  isDailyNoteExpanded = expanded;
+  notes.classList.toggle('is-expanded', expanded);
+  notes.querySelector('.note-toggle').setAttribute('aria-expanded', String(expanded));
+  const content = notes.querySelector('.note-content');
+  content.inert = !expanded;
+  content.setAttribute('aria-hidden', String(!expanded));
 }
 
 function createTaskTitleText(task) {
@@ -1805,6 +1850,7 @@ function revealSearchTarget(root) {
     });
   expand(taskState);
   renderDayView(root);
+  if (target.note) setNotesExpanded(root.querySelector('.daily-notes'), true);
   requestAnimationFrame(() => {
     const node = target.note
       ? root.querySelector('.note-editor')
@@ -1886,6 +1932,7 @@ function resetTransientDayState() {
   activeTagPopoverTaskId = null;
   activeTagPopoverAnchor = null;
   temporaryTagText = '';
+  isDailyNoteExpanded = false;
   taskDragController?.cancel();
   document.body.classList.remove('is-task-dragging');
 }
@@ -1983,7 +2030,7 @@ function addChildTask(parentId) {
     return;
   }
 
-  const child = createBlankTask();
+  const child = createBlankTask(parent);
   parent.children ||= [];
   parent.children.push(child);
   parent.collapsed = false;

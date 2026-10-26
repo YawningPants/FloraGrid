@@ -1,4 +1,29 @@
 /* Both task appearances share one family frame; only root colors outline the family. */
+/* Glass text gets its own brighter pigment; borders keep the persisted pastel. */
+html[data-surface-style='glass'] .task-row.has-custom-color {
+  --glass-task-text: color-mix(in srgb, var(--accent) 78%, #fff8ee 22%);
+  --completion-active-title: var(--glass-task-text);
+}
+html[data-surface-style='glass'][data-appearance]
+  .task-row.has-custom-color.is-active
+  > .task-body
+  > :is(.task-title, .task-title-input) {
+  color: var(--glass-task-text);
+}
+html[data-surface-style='glass'] .task-row[data-depth='0'] .task-color-button {
+  opacity: 0;
+  pointer-events: none;
+}
+html[data-surface-style='glass'] .task-row[data-depth='0']:hover .task-color-button,
+html[data-surface-style='glass'] .task-row[data-depth='0']:has(:focus-visible) .task-color-button,
+html[data-surface-style='glass'] .task-row[data-depth='0'] .task-color-button[aria-expanded='true'] {
+  opacity: 1;
+  pointer-events: auto;
+}
+html[data-surface-style='glass'][data-appearance] .month-task-chip.has-custom-color.is-active {
+  color: color-mix(in srgb, var(--task-color) 78%, #fff8ee 22%);
+}
+
 html[data-appearance='minimal'] .task-tree > .task-node {
   border: 1px solid rgba(var(--theme-border-rgb), 0.16);
   border-radius: 8px;

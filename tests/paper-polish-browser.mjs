@@ -357,7 +357,10 @@ try {
   );
   for (const appearance of ['minimal', 'botanical']) {
     await setTheme({ presetId: 'morning', surfaceStyle: 'glass', appearance });
-    await pointerClick('[data-task-id=parent] .task-color-button');
+    await read(
+      "(()=>{const row=document.querySelector('[data-task-id=parent]'),r=row.getBoundingClientRect();row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.x+30,clientY:r.y+10,button:2}))})()",
+    );
+    await click('.task-context-color');
     await click('.task-color-choice[aria-label="设为浅蓝"]');
     assert.equal(
       await read(
